@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Touch Controls - Phaser Platformer series</title>
+    <script src="js/phaser.min.js"></script>
+    <link rel="stylesheet" href="css/screen.css">
+</head>
+
+<body>
+    <script type="text/javascript">
+    var config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 400,
+        transparent: true,
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 300 }
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        }
+    };
+
+    var player,
+        coins,
+        platforms,
+        cursors,
+        score = 0,
+        scoreText,
+        acceleration = 600,
+        jumpVelocity = -330,
+        wasStanding = false,
+        edgeTimer = 0,
+        jumping = false,
+        //added some new variables here to deal with touch jumping
+        prevPos = 0,
+        yPos = 0,
+        touchJump = false,
+        touchJumpThreshold = 5;
+
+    var game = new Phaser.Game(config);
+
+    function preload() {
+        // this.load.setBaseURL("https://digitherium/codepen/phaserplatformer/");
+        this.load.setBaseURL("assets/");
+        this.load.image("ground", "platform.jpg");
+        this.load.image("coin", "coin.jpg");
+        this.load.image("hero", "hero.jpg");
+        this.load.image("logo", "digitherium-logo.jpg");
+    }
+
+    function create() {
+        var logo = this.add.sprite(config.width / 2, config.height / 2, 'logo');
+        logo.alpha = 0.4;
+        logo.setScale(0.5);
+
+        this.input.addPointer(1);
+        platforms = this.physics.add.staticGroup();
+
+        platforms.create(400, 400, 'ground').setScale(2).refreshBody();
+        platforms.create(50, 240, 'ground');
+        platforms.create(750, 140, 'ground');
+
+        player = this.physics.add.sprite(100, 350, 'hero');
+
+        player.setCollideWorldBounds(true);
+
+        //Set bounce to 0, so our hero just lands directly
+        player.setBounce(0);
+        //Set top speeds
+        player.body.maxVelocity.x = 200;
+        player.body.maxVelocity.y = 500;
+
+        cursors = this.input.keyboard.createCursorKeys();
+
+        coins = this.physics.add.group({
+            key: 'coin',
+            repeat: 11,
+            setXY: { x: 12, y: 0, stepX: 70 }
+        });
+
+        coins.children.iterate(function(child) {
+            child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
+        });
+
+        scoreText = this.add.text(16, 16, 'score: 0', { fontSize: '24px', fill: '#fff' });
+
+        this.physics.add.collider(player, platforms);
+        this.physics.add.collider(coins, platforms);
+        this.physics.add.overlap(player, coins, collectCoin, null, this);
+    }
+
+    function moveLeft() {
+        var standing = player.body.blocked.down || player.body.touching.down;
+        //if hero is on ground then use full acceleration
+        if (standing) {
+            player.setAccelerationX(-acceleration);
+        }
+        //if hero is in the air then accelerate slower
+        else {
+            player.setAccelerationX(-acceleration / 3);
+        }
+    }
+
+    function moveRight() {
+        var standing = player.body.blocked.down || player.body.touching.down;
+        //if hero is on ground then use full acceleration
+        if (standing) {
+            player.setAccelerationX(acceleration);
+        }
+        //if hero is in the air then accelerate slower
+        else {
+            player.setAccelerationX(acceleration / 3);
+        }
+    }
+
+    function update() {
+        var standing = player.body.blocked.down || player.body.touching.down;
+        //if left key is down then move left
+        if (cursors.left.isDown) {
+            moveLeft();
+        }
+        //same deal but for right arrow
+        else if (cursors.right.isDown) {
+            moveRight();
+        }
+
+        //if either touch pointer is down. Two thumbs, two pointers
+        if (this.input.pointer1.isDown || this.input.pointer2.isDown) {
+            //work out half way point of our game 
+            var leftHalf = config.width / 2;
+            //if thumb is on the left hand side of the screen we are dealing with horizontal movement
+            if (this.input.pointer1.x < leftHalf || this.input.pointer2.x < leftHalf) {
+                //reset pointer variable
+                var myMovePointer = null;
+                //here we get the pointer that is being used on the left hand side of screen. Depends which thumb they touched screen with first.
+                if (this.input.pointer1.x < leftHalf && this.input.pointer1.isDown) {
+                    myMovePointer = this.input.pointer1;
+                }
+                if (this.input.pointer2.x < leftHalf && this.input.pointer2.isDown) {
+                    myMovePointer = this.input.pointer2;
+                }
+
+                //if we have an active touch pointer on the left hand side of the screen then...
+                if (myMovePointer) {
+                    //if thumb is in the left hand quarter of the screen then go left
+                    if (Math.floor(myMovePointer.x / (leftHalf / 2)) === 0) {
+                        moveLeft();
+                    }
+                    //If touch is to the right of the player move them right
+                    if (Math.floor(myMovePointer.x / (leftHalf / 2)) === 1) {
+                        moveRight();
+                    }
+                }
+            }
+            //if thumb is on the right hand side of the screen we are dealing with vertical movement - i.e. jumping.
+            if (this.input.pointer1.x > leftHalf || this.input.pointer2.x > leftHalf) {
+                //reset pointer variable
+                var myJumpPointer = null;
+                //get active touch pointer for this side of the screen
+                if (this.input.pointer1.x > leftHalf && this.input.pointer1.isDown) {
+                    myJumpPointer = this.input.pointer1;
+                }
+                if (this.input.pointer2.x > leftHalf && this.input.pointer2.isDown) {
+                    myJumpPointer = this.input.pointer2;
+                }
+                //if we have a touch pointer on right hand side of screen...
+                if (myJumpPointer) {
+                    //store last y position of touch pointer
+                    prevPos = yPos;
+                    //get new position of touch pointer
+                    yPos = myJumpPointer.y;
+
+                    //if we have moved our thump upwards and it's more than our threshold then we set jump flag to true
+                    if (prevPos - yPos > touchJumpThreshold) {
+                        touchJump = true;
+                    }
+                }
+            }
+        }
+
+        //if not moving left or right via keys or touch device...
+        if (!cursors.right.isDown && !cursors.left.isDown && !this.input.pointer1.isDown && !this.input.pointer2.isDown) {
+            //if hero is close to having no velocity either left or right then set velocity to 0. This stops jerky back and forth as the hero comes to a halt. i.e. as we slow hero down, below a certain point we just stop them moving altogether as it looks smoother
+            if (Math.abs(player.body.velocity.x) < 10 && Math.abs(player.body.velocity.x) > -10) {
+                player.setVelocityX(0);
+                player.setAccelerationX(0);
+            }
+            //if our hero isn't moving left or right then slow them down 
+            else {
+                //this velocity.x check just works out whether we are setting a positive (going right) or negative (going left) number  
+                player.setAccelerationX(((player.body.velocity.x > 0) ? -1 : 1) * acceleration / 3);
+            }
+        }
+
+
+        //get current time in seconds
+        var d = new Date();
+        var time = d.getTime();
+
+        //if we have just left the ground set edge time for 100ms time
+        if (!standing && wasStanding) {
+            edgeTimer = time + 100;
+        }
+
+        //if player is standing, or just fallen off a ledge (within our allowed grace time) and...
+        //either up key is press, or touchjump flag is set AND they are not already jumping then jump!
+        if ((standing || time <= edgeTimer) && (cursors.up.isDown || touchJump) && !jumping) {
+            player.setVelocityY(jumpVelocity);
+            jumping = true;
+        }
+
+        //if not pressing up key...
+        if (!cursors.up.isDown) {
+            //if player is touching ground / platform then reset jump parametrs
+            if (player.body.touching.down) {
+                jumping = false;
+                touchJump = false;
+                prevPos = 0;
+            }
+        }
+        wasStanding = standing;
+    }
+
+    function collectCoin(player, coin) {
+        coin.disableBody(true, true);
+
+        score += 10;
+        scoreText.setText('Score: ' + score);
+    }
+    </script>
+</body>
+
+</html>

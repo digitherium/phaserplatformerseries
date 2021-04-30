@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Setup - Phaser Platformer series</title>
+    <script src="js/phaser.min.js"></script>
+    <link rel="stylesheet" href="css/screen.css">
+</head>
+
+<body>
+    <script type="text/javascript">
+    var config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 400,
+        transparent: true,
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 300 }
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        }
+    };
+
+    var player,
+        coins,
+        platforms,
+        cursors,
+        score = 0,
+        scoreText;
+
+    var game = new Phaser.Game(config);
+
+    function preload() {
+        // this.load.setBaseURL("https://digitherium/codepen/phaserplatformer/");
+        this.load.setBaseURL("assets/");
+        this.load.image("ground", "platform.jpg");
+        this.load.image("coin", "coin.jpg");
+        this.load.image("hero", "hero.jpg");
+        this.load.image("logo", "digitherium-logo.jpg");
+
+    }
+
+    function create() {
+        var logo = this.add.sprite(config.width / 2, config.height / 2, 'logo');
+        logo.alpha = 0.4;
+        logo.setScale(0.5);
+
+        platforms = this.physics.add.staticGroup();
+
+        platforms.create(400, 400, 'ground').setScale(2).refreshBody();
+        platforms.create(50, 240, 'ground');
+        platforms.create(750, 140, 'ground');
+
+        player = this.physics.add.sprite(100, 350, 'hero');
+
+        player.setCollideWorldBounds(true);
+
+        //Set bounce to 0, so our hero just lands directly
+        player.setBounce(0);
+
+        cursors = this.input.keyboard.createCursorKeys();
+
+        coins = this.physics.add.group({
+            key: 'coin',
+            repeat: 11,
+            setXY: { x: 12, y: 0, stepX: 70 }
+        });
+
+        coins.children.iterate(function(child) {
+            child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
+        });
+
+        scoreText = this.add.text(config.width - 140, 16, 'score: 0', { fontSize: '24px', fill: '#fff' });
+
+        this.physics.add.collider(player, platforms);
+        this.physics.add.collider(coins, platforms);
+        this.physics.add.overlap(player, coins, collectCoin, null, this);
+    }
+
+    function update() {
+        var standing = player.body.blocked.down || player.body.touching.down;
+        //if left key is down then move left
+        if (cursors.left.isDown) {
+            player.setVelocityX(-160);
+        }
+        //same deal but for right arrow
+        else if (cursors.right.isDown) {
+            player.setVelocityX(160);
+        }
+        //if neither left or right arrow is down then...
+        else {
+            player.setVelocityX(0);
+        }
+
+        //If player is touching floor and up key is pressed then jump
+        if (standing && cursors.up.isDown) {
+            player.setVelocityY(-330);
+        }
+    }
+
+    function collectCoin(player, coin) {
+        coin.disableBody(true, true);
+        score += 10;
+        scoreText.setText('Score: ' + score);
+    }
+    </script>
+</body>
+
+</html>

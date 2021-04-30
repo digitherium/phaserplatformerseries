@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Edge Timer - Phaser Platformer series</title>
+    <script src="js/phaser.min.js"></script>
+    <link rel="stylesheet" href="css/screen.css">
+</head>
+
+<body>
+    <script type="text/javascript">
+    var config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 400,
+        transparent: true,
+        physics: {
+            default: "arcade",
+            arcade: {
+                gravity: { y: 300 }
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        }
+    };
+
+    var player,
+        coins,
+        platforms,
+        cursors,
+        score = 0,
+        scoreText,
+        acceleration = 600,
+        jumpVelocity = -330,
+        wasStanding = false,
+        edgeTimer = 0,
+        jumping = false;
+
+    var game = new Phaser.Game(config);
+
+    function preload() {
+        // this.load.setBaseURL("https://digitherium/codepen/phaserplatformer/");
+        this.load.setBaseURL("assets/");
+        this.load.image("ground", "platform.jpg");
+        this.load.image("coin", "coin.jpg");
+        this.load.image("hero", "hero.jpg");
+        this.load.image("logo", "digitherium-logo.jpg");
+    }
+
+    function create() {
+        var logo = this.add.sprite(config.width / 2, config.height / 2, 'logo');
+        logo.alpha = 0.4;
+        logo.setScale(0.5);
+
+        platforms = this.physics.add.staticGroup();
+
+        platforms.create(400, 400, "ground").setScale(2).refreshBody();
+        platforms.create(50, 240, "ground");
+        platforms.create(750, 140, "ground");
+
+        player = this.physics.add.sprite(100, 450, "hero");
+
+        player.setCollideWorldBounds(true);
+
+        //Set bounce to 0, so our hero just lands directly
+        player.setBounce(0);
+        //Set top speeds
+        player.body.maxVelocity.x = 200;
+        player.body.maxVelocity.y = 500;
+
+        cursors = this.input.keyboard.createCursorKeys();
+
+        coins = this.physics.add.group({
+            key: "coin",
+            repeat: 11,
+            setXY: { x: 12, y: 0, stepX: 70 }
+        });
+
+        coins.children.iterate(function(child) {
+            child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
+        });
+
+        scoreText = this.add.text(16, 16, "score: 0", {
+            fontSize: "24px",
+            fill: "#fff"
+        });
+
+        this.physics.add.collider(player, platforms);
+        this.physics.add.collider(coins, platforms);
+        this.physics.add.overlap(player, coins, collectCoin, null, this);
+    }
+
+    function update() {
+        var standing = player.body.blocked.down || player.body.touching.down;
+        //if left key is down then move left
+        if (cursors.left.isDown) {
+            //if hero is on ground then use full acceleration
+            if (standing) {
+                player.setAccelerationX(-acceleration);
+            } else {
+                //if hero is in the air then accelerate slower
+                player.setAccelerationX(-acceleration / 3);
+            }
+        } else if (cursors.right.isDown) {
+            //same deal but for right arrow
+            if (standing) {
+                player.setAccelerationX(acceleration);
+            } else {
+                player.setAccelerationX(acceleration / 3);
+            }
+        } else {
+            //if neither left or right arrow is down then...
+            //if hero is close to having no velocity either left or right then set velocity to 0. This stops jerky back and forth as the hero comes to a halt. i.e. as we slow hero down, below a certain point we just stop them moving altogether as it looks smoother
+            if (
+                Math.abs(player.body.velocity.x) < 10 &&
+                Math.abs(player.body.velocity.x) > -10
+            ) {
+                player.setVelocityX(0);
+                player.setAccelerationX(0);
+            } else {
+                //if our hero isn't moving left or right then slow them down
+                //this velocity.x check just works out whether we are setting a positive (going right) or negative (going left) number
+                player.setAccelerationX(
+                    (player.body.velocity.x > 0 ? -1 : 1) * acceleration / 3
+                );
+            }
+        }
+
+        //get current time in seconds
+        var d = new Date();
+        var time = d.getTime();
+
+        //if we have just left the ground set edge time for 100ms time
+        if (!standing && wasStanding) {
+            edgeTimer = time + 100;
+        }
+
+        if ((standing || time <= edgeTimer) && cursors.up.isDown && !jumping) {
+            player.setVelocityY(jumpVelocity);
+            jumping = true;
+        }
+
+        if (!cursors.up.isDown) {
+            if (player.body.touching.down) {
+                jumping = false;
+            }
+        }
+        wasStanding = standing;
+    }
+
+    function collectCoin(player, coin) {
+        coin.disableBody(true, true);
+
+        score += 10;
+        scoreText.setText("Score: " + score);
+    }
+    </script>
+</body>
+
+</html>
