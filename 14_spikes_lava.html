@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Hearts - Phaser Platformer series</title>
+    <title>Spikes / Lava - Phaser Platformer series</title>
     <script src="js/phaser.min.js"></script>
     <link rel="stylesheet" href="css/screen.css">
 </head>
@@ -18,6 +18,7 @@
         physics: {
             default: 'arcade',
             arcade: {
+                fps: 120,
                 gravity: { y: 300 }
             }
         },
@@ -61,12 +62,12 @@
         thumbSizeOffset = 60,
         startX,
         shell,
-        shellSpeed = 500;
+        shellSpeed = 500,
+        spikes;
 
     var game = new Phaser.Game(config);
 
     function preload() {
-        // this.load.setBaseURL("https://digitherium.com/codepen/phaserplatformer/");
         this.load.setBaseURL("assets/");
         this.load.image('ground', 'platform.jpg');
         this.load.image('coin', 'coin.jpg');
@@ -74,6 +75,7 @@
         this.load.image('baddie', 'baddie.jpg');
         this.load.image('ladder', 'ladder.png');
         this.load.image('shell', 'shell.jpg');
+        this.load.image('spikes', 'spikes.png');
         this.load.image('heart', 'heart.png');
         this.load.image('heart-filled', 'heart-filled.png');
         this.load.image("logo", "digitherium-logo.jpg");
@@ -89,7 +91,8 @@
         this.input.addPointer(1);
         platforms = this.physics.add.staticGroup();
 
-        platforms.create(400, 400, 'ground').setScale(2).refreshBody();
+        platforms.create(565, 400, 'ground').setScale(2).refreshBody();
+        platforms.create(-125, 385, 'ground');
         platforms.create(50, 240, 'ground');
         platforms.create(750, 140, 'ground');
 
@@ -98,7 +101,13 @@
         ladder = ladders.create(268, 296, 'ladder');
         ladder.body.immovable = true;
 
-        player = this.physics.add.sprite(100, 350, 'hero');
+        spikes = this.physics.add.staticGroup();
+        spikes.enableBody = true;
+        spikes = spikes.create(120, 385, 'spikes');
+        spikes.body.immovable = true;
+
+
+        player = this.physics.add.sprite(40, 350, 'hero');
         player.setOrigin(.5, .5);
         player.setCollideWorldBounds(true);
         //create and set an invulnerable flag for after the player has been hit
@@ -161,13 +170,17 @@
         this.physics.add.collider(coins, platforms);
         this.physics.add.collider(shell, platforms);
         this.physics.add.collider(player, shell, shellHit, null, this);
+        this.physics.add.collider(player, spikes, playerHit, null, this);
         this.physics.add.overlap(player, coins, collectCoin, null, this);
         this.physics.add.overlap(player, baddie, hitBaddie, null, this);
         this.physics.add.overlap(player, ladders, isOnLadder, null, this);
+        this.physics.add.collider(player, ladders, null, checkLadderTop, this);
         this.physics.add.overlap(shell, baddie, shellHitBaddie, null, this);
+        this.physics.add.collider(shell, spikes, destroyShell, null, this);
     }
 
     function hitBaddie(player, baddie) {
+
         //baddie was hit on the head and hasn't already been hit
         if (baddie.body.touching.up && !baddie.hit) {
             // set baddie as being hit and remove physics
@@ -189,89 +202,95 @@
         }
         //otherwise you've hit baddie, BUT not on the head. This makes you die
         else {
-            //if you are not already invulnerable
-            if (!player.invulnerable) {
-                //set player as invulnerable
-                player.invulnerable = true;
-                //get the heart sprites from our arrays we set up earlier
-                var currentHeartCount = player.hearts,
-                    currentHeart = hearts[currentHeartCount - 1],
-                    currentHeartOutline = heartOutlines[currentHeartCount - 1];
+            playerHit.call(this);
+            // playerHit();
+        }
+    }
 
-                //fade out the heart fill
-                var heartFade = this.tweens.add({
-                    targets: currentHeart,
-                    alpha: 0,
-                    scaleX: 0,
-                    scaleY: 0,
+    function playerHit() {
+        console.log("what is tweens:", this, game);
+        //if you are not already invulnerable
+        if (!player.invulnerable) {
+            //set player as invulnerable
+            player.invulnerable = true;
+            //get the heart sprites from our arrays we set up earlier
+            var currentHeartCount = player.hearts,
+                currentHeart = hearts[currentHeartCount - 1],
+                currentHeartOutline = heartOutlines[currentHeartCount - 1];
+
+            //fade out the heart fill
+            var heartFade = this.tweens.add({
+                targets: currentHeart,
+                alpha: 0,
+                scaleX: 0,
+                scaleY: 0,
+                ease: 'Linear',
+                duration: 200
+            });
+
+            //create a timeline of tweens for the heart outline so it shrinks then grows back
+            var heartsTimeline = this.tweens.createTimeline();
+
+            //this is the heart outline scaling down
+            heartsTimeline.add({
+                targets: currentHeartOutline,
+                scaleX: 0.5,
+                scaleY: 0.5,
+                ease: 'Power1',
+                duration: 200
+            });
+
+            //and then back
+            heartsTimeline.add({
+                targets: currentHeartOutline,
+                scaleX: 1,
+                scaleY: 1,
+                ease: 'Power1',
+                duration: 200
+            });
+            //play the timeline straight away
+            heartsTimeline.play();
+
+            //remove a heart from out count stored on the player object
+            player.hearts -= 1;
+
+            //if hearts is 0 or less you're dead as you are out of lives
+            if (player.hearts <= 0) {
+                //remove physics from player
+                player.disableBody(false, false);
+                //and play death animation
+                var tween = this.tweens.add({
+                    targets: player,
+                    alpha: 0.3,
+                    scaleX: 1.1,
+                    scaleY: 1.1,
+                    angle: 90,
+                    x: player.x - 20,
+                    y: player.y - 20,
                     ease: 'Linear',
-                    duration: 200
+                    duration: 200,
+                    onComplete: function() {
+                        restartGame(this);
+                    },
+                    onCompleteScope: this
+                });
+            }
+            //otherwise you're not dead you've just lost a life so...
+            else {
+                //make the player stop in their tracks and jump up
+                player.body.velocity.x = 0;
+                player.body.velocity.y = -220;
+                //tween the players alpha to 30%
+                var tween = this.tweens.add({
+                    targets: player,
+                    alpha: 0.3,
+                    ease: 'Linear',
+                    duration: 200,
+                    onCompleteScope: this
                 });
 
-                //create a timeline of tweens for the heart outline so it shrinks then grows back
-                var heartsTimeline = this.tweens.createTimeline();
-
-                //this is the heart outline scaling down
-                heartsTimeline.add({
-                    targets: currentHeartOutline,
-                    scaleX: 0.5,
-                    scaleY: 0.5,
-                    ease: 'Power1',
-                    duration: 200
-                });
-
-                //and then back
-                heartsTimeline.add({
-                    targets: currentHeartOutline,
-                    scaleX: 1,
-                    scaleY: 1,
-                    ease: 'Power1',
-                    duration: 200
-                });
-                //play the timeline straight away
-                heartsTimeline.play();
-
-                //remove a heart from out count stored on the player object
-                player.hearts -= 1;
-
-                //if hearts is 0 or less you're dead as you are out of lives
-                if (player.hearts <= 0) {
-                    //remove physics from player
-                    player.disableBody(false, false);
-                    //and play death animation
-                    var tween = this.tweens.add({
-                        targets: player,
-                        alpha: 0.3,
-                        scaleX: 1.1,
-                        scaleY: 1.1,
-                        angle: 90,
-                        x: player.x - 20,
-                        y: player.y - 20,
-                        ease: 'Linear',
-                        duration: 200,
-                        onComplete: function() {
-                            restartGame(this);
-                        },
-                        onCompleteScope: this
-                    });
-                }
-                //otherwise you're not dead you've just lost a life so...
-                else {
-                    //make the player stop in their tracks and jump up
-                    player.body.velocity.x = 0;
-                    player.body.velocity.y = -220;
-                    //tween the players alpha to 30%
-                    var tween = this.tweens.add({
-                        targets: player,
-                        alpha: 0.3,
-                        ease: 'Linear',
-                        duration: 200,
-                        onCompleteScope: this
-                    });
-
-                    //set a timer for 1 second. When this is up we tween player back to normal and make then vulnerable again
-                    var timer = this.time.delayedCall(vulnerableTime, playerVulnerable, [this]);
-                }
+                //set a timer for 1 second. When this is up we tween player back to normal and make then vulnerable again
+                var timer = this.time.delayedCall(vulnerableTime, playerVulnerable, [this]);
             }
         }
     }
@@ -307,22 +326,7 @@
                 },
             });
 
-            //disable physics of shell
-            shell.disableBody(false, false);
-            //play shell hit animation
-            var tween2 = this.tweens.add({
-                targets: shell,
-                alpha: 0.3,
-                scaleX: 2,
-                scaleY: 2,
-                y: "-=100",
-                rotation: -360,
-                ease: 'Linear',
-                duration: 200,
-                onComplete: function() {
-                    destroyGameObject(shell);
-                },
-            });
+            destroyShell.call(this);
         }
     }
 
@@ -348,6 +352,25 @@
         }
         //make player react to shell by bouncing slightly
         player.body.velocity.y = -200;
+    }
+
+    function destroyShell() {
+        //disable physics of shell
+        shell.disableBody(false, false);
+        //play shell hit animation
+        var destroyShell = this.tweens.add({
+            targets: shell,
+            alpha: 0.3,
+            scaleX: 2,
+            scaleY: 2,
+            y: "-=100",
+            rotation: -360,
+            ease: 'Linear',
+            duration: 200,
+            onComplete: function() {
+                destroyGameObject(shell);
+            },
+        });
     }
 
     function restartGame(game) {
@@ -397,10 +420,30 @@
         //baddie.scale.setTo(-baddie.scale.x, 1);
     }
 
+    //called when player overlaps ladder
     function isOnLadder() {
+        //set ladder flag to true and remove gravity
         onLadder = true;
+        player.body.setAllowGravity(false);
     }
 
+    //called when player collides with ladder
+    function checkLadderTop(player, ladder) {
+        /* We check here if our player is higher up than the ladder i.e. if the player is on top of the ladder
+        the sprites are positioned from their centres, so we have to add or subtract half their height to find the heroes feet and the top of the ladder. 
+        With the player we add half the height so we are checking the positon of their feet. With the ladder we add half the height so we are checking the top of the ladder. We also round the two values differently, floor for the player to give us the smallest number possible and ceil for the ladder height to give us the highest number possible. This deals with any subpixel values.
+        */
+        if (Math.floor(player.y + (player.height / 2)) <= Math.ceil(ladder.y - (ladder.height / 2))) {
+            //if pressing the down key, or touch down return false and cancel collision
+            if (cursors.down.isDown || (Math.floor(prevPos) < Math.floor(yPos))) return false;
+            //return true making our collision happen i.e. the player can walk on top of the ladder
+            else return true;
+        }
+        //otherwise return false which cancels the collision
+        else {
+            return false;
+        }
+    }
 
     function update() {
         //built in arcade physics functions of blocked and touching to test for collisions in a given direction
@@ -408,8 +451,6 @@
             //get current time in seconds
             d = new Date(),
             time = d.getTime();
-
-        player.body.setAllowGravity(true);
 
         //if left key is down then move left
         if (cursors.left.isDown) {
@@ -576,7 +617,10 @@
             touchMoving = false;
 
             if (onLadder) {
-                player.setVelocityY(-5);
+                //if player is on top of the ladder we reset the velocity, otherwise we leave them be to climb or descend
+                if (Math.floor(player.y + (player.height / 2)) <= Math.ceil(ladder.y - (ladder.height / 2))) {
+                    player.setVelocityY(0);
+                }
             }
         }
 
@@ -627,12 +671,6 @@
                 player.setVelocityX(0);
                 player.setVelocityY(100);
             }
-
-            //player is on ladder by not moving
-            if (!cursors.up.isDown && !cursors.down.isDown && !jumping) {
-                //set a slight upward velocity to keep them still on the ladder
-                player.setVelocityY(-5);
-            }
         }
 
 
@@ -657,10 +695,9 @@
             }
         }
         wasStanding = standing;
+        //if player is no longer on on ladder then turn gravity back on
+        if (!onLadder) player.body.setAllowGravity(true);
         onLadder = false;
-
-        // 
-
     }
 
 

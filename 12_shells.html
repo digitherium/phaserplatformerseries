@@ -18,6 +18,7 @@
         physics: {
             default: 'arcade',
             arcade: {
+                fps: 120,
                 gravity: { y: 300 }
             }
         },
@@ -62,7 +63,6 @@
     var game = new Phaser.Game(config);
 
     function preload() {
-        // this.load.setBaseURL("https://digitherium.com/codepen/phaserplatformer/");
         this.load.setBaseURL("assets/");
         this.load.image('ground', 'platform.jpg');
         this.load.image('coin', 'coin.jpg');
@@ -139,6 +139,7 @@
         this.physics.add.overlap(player, coins, collectCoin, null, this);
         this.physics.add.overlap(player, baddie, hitBaddie, null, this);
         this.physics.add.overlap(player, ladders, isOnLadder, null, this);
+        this.physics.add.collider(player, ladders, null, checkLadderTop, this);
         this.physics.add.overlap(shell, baddie, shellHitBaddie, null, this);
     }
 
@@ -290,10 +291,31 @@
         //baddie.scale.setTo(-baddie.scale.x, 1);
     }
 
+    //called when player overlaps ladder
     function isOnLadder() {
+        //set ladder flag to true and remove gravity
         onLadder = true;
+        player.body.setAllowGravity(false);
     }
 
+
+    //called when player collides with ladder
+    function checkLadderTop(player, ladder) {
+        /* We check here if our player is higher up than the ladder i.e. if the player is on top of the ladder
+        the sprites are positioned from their centres, so we have to add or subtract half their height to find the heroes feet and the top of the ladder. 
+        With the player we add half the height so we are checking the positon of their feet. With the ladder we add half the height so we are checking the top of the ladder. We also round the two values differently, floor for the player to give us the smallest number possible and ceil for the ladder height to give us the highest number possible. This deals with any subpixel values.
+        */
+        if (Math.floor(player.y + (player.height / 2)) <= Math.ceil(ladder.y - (ladder.height / 2))) {
+            //if pressing the down key, or touch down return false and cancel collision
+            if (cursors.down.isDown || (Math.floor(prevPos) < Math.floor(yPos))) return false;
+            //return true making our collision happen i.e. the player can walk on top of the ladder
+            else return true;
+        }
+        //otherwise return false which cancels the collision
+        else {
+            return false;
+        }
+    }
 
     function update() {
         //built in arcade physics functions of blocked and touching to test for collisions in a given direction
@@ -301,8 +323,6 @@
             //get current time in seconds
             d = new Date(),
             time = d.getTime();
-
-        player.body.setAllowGravity(true);
 
         //if left key is down then move left
         if (cursors.left.isDown) {
@@ -469,7 +489,10 @@
             touchMoving = false;
 
             if (onLadder) {
-                player.setVelocityY(-5);
+                //if player is on top of the ladder we reset the velocity, otherwise we leave them be to climb or descend
+                if (Math.floor(player.y + (player.height / 2)) <= Math.ceil(ladder.y - (ladder.height / 2))) {
+                    player.setVelocityY(0);
+                }
             }
         }
 
@@ -520,12 +543,6 @@
                 player.setVelocityX(0);
                 player.setVelocityY(100);
             }
-
-            //player is on ladder by not moving
-            if (!cursors.up.isDown && !cursors.down.isDown && !jumping) {
-                //set a slight upward velocity to keep them still on the ladder
-                player.setVelocityY(-5);
-            }
         }
 
 
@@ -550,10 +567,9 @@
             }
         }
         wasStanding = standing;
+        //if player is no longer on on ladder then turn gravity back on
+        if (!onLadder) player.body.setAllowGravity(true);
         onLadder = false;
-
-        // 
-
     }
 
 
