@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Hearts - Phaser Platformer series</title>
+    <title>Camera Follow - Phaser Platformer series</title>
     <script src="js/phaser.min.js"></script>
     <link rel="stylesheet" href="css/screen.css">
 </head>
@@ -31,6 +31,7 @@
 
     var player,
         baddie,
+        baddies,
         coins,
         scoreCoin,
         scoreCoinTimeline,
@@ -44,6 +45,8 @@
         maxHearts = 3,
         vulnerableTime = 1000,
         acceleration = 600,
+        maxPlayerSpeed = 200,
+        superPlayerSpeed = 400,
         jumpVelocity = -330,
         wasStanding = false,
         onLadder = false,
@@ -62,7 +65,14 @@
         thumbSizeOffset = 60,
         startX,
         shell,
-        shellSpeed = 500;
+        shellSpeed = 500,
+        spikes,
+        invicibility,
+        emitter,
+        heroColor = new Phaser.Display.Color(255, 255, 255),
+        invincibleColor = new Phaser.Display.Color(56, 194, 239),
+        camera,
+        hud;
 
     var game = new Phaser.Game(config);
 
@@ -73,7 +83,10 @@
         this.load.image('hero', 'hero.jpg');
         this.load.image('baddie', 'baddie.jpg');
         this.load.image('ladder', 'ladder.png');
-        this.load.image('shell', 'shell.jpg');
+        this.load.image('shell', 'shell.png');
+        this.load.image('powerup', 'powerup.jpg');
+        this.load.image('dust', 'dust.jpg');
+        this.load.image('spikes', 'spikes.png');
         this.load.image('heart', 'heart.png');
         this.load.image('heart-filled', 'heart-filled.png');
         this.load.image("logo", "digitherium-logo.jpg");
@@ -88,39 +101,66 @@
 
         this.input.addPointer(1);
         platforms = this.physics.add.staticGroup();
+        this.physics.world.setBounds(0, 0, 1630, 800);
 
+        platforms.create(1300, 400, 'ground').setScale(2).refreshBody();
         platforms.create(400, 400, 'ground').setScale(2).refreshBody();
-        platforms.create(50, 240, 'ground');
-        platforms.create(750, 140, 'ground');
+        platforms.create(150, 240, 'ground');
+        platforms.create(860, 190, 'ground');
 
         ladders = this.physics.add.staticGroup();
         ladders.enableBody = true;
-        ladder = ladders.create(268, 296, 'ladder');
+        ladder = ladders.create(368, 296, 'ladder');
         ladder.body.immovable = true;
 
-        player = this.physics.add.sprite(100, 350, 'hero');
+        spikes = this.physics.add.staticGroup();
+        spikes.enableBody = true;
+        spikes = spikes.create(850, 415, 'spikes');
+        spikes.body.immovable = true;
+
+        player = this.physics.add.sprite(40, 350, 'hero');
         player.setOrigin(.5, .5);
+        player.setDrag(1);
         player.setCollideWorldBounds(true);
+
         //create and set an invulnerable flag for after the player has been hit
         player.invulnerable = false;
+        //and set an invincible flag for the invincibility powerup
+        player.invincible = false;
         //set no lives / hearts
         player.hearts = maxHearts;
 
-        baddie = this.physics.add.sprite(620, 350, 'baddie');
+        //create our baddies group
+        baddies = this.physics.add.group();
+
+        baddie = baddies.create(1220, 350, 'baddie');
         baddie.setOrigin(.5, .5);
         baddie.setCollideWorldBounds(true);
         baddie.body.velocity.x = -100;
         baddie.maxDistance = 300;
         baddie.previousX = baddie.x;
 
-        shell = this.physics.add.sprite(700, 360, 'shell');
+        baddie = baddies.create(940, 100, 'baddie');
+        baddie.setOrigin(.5, .5);
+        baddie.setCollideWorldBounds(true);
+        baddie.body.velocity.x = -100;
+        baddie.maxDistance = 250;
+        baddie.previousX = baddie.x;
+
+        //add a shall and set it to rotate around its center
+        shell = this.physics.add.sprite(1400, 360, 'shell');
         shell.setOrigin(.5, .5);
+        shell.setCollideWorldBounds(true);
+
+        //add invincibility powerup and set it to rotate around its center
+        invicibility = this.physics.add.sprite(256, 214, 'powerup');
+        invicibility.setOrigin(.5, .5);
 
         buildTouchSlider(this);
         //Set bounce to 0, so our hero just lands directly
         player.setBounce(0);
         //Set top speeds
-        player.body.maxVelocity.x = 200;
+        player.body.maxVelocity.x = maxPlayerSpeed;
         player.body.maxVelocity.y = 500;
 
         cursors = this.input.keyboard.createCursorKeys();
@@ -135,12 +175,13 @@
             child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
         });
 
+
         scoreCoin = this.add.sprite(30, 32, 'coin');
         scoreCoin.setOrigin(.5, .5);
         scoreCoin.scaleX = .5;
         scoreCoin.scaleY = .5;
         scoreText = this.add.text(46, 20, '0', { fontSize: '24px', fill: '#fff' });
-
+        scoreCoin.setScrollFactor(0);
         //create three heart outlines...
         var heartOutline1 = this.add.sprite(760, 38, 'heart'),
             heartOutline2 = this.add.sprite(720, 38, 'heart'),
@@ -156,123 +197,169 @@
         //and store in an array for easy access later
         hearts = [heart1, heart2, heart3];
 
+        //create a contain for our heads up display and add some sprites
+        hud = this.add.container(0, 0, [scoreCoin, scoreText, heart1, heart2, heart3, heartOutline1, heartOutline2, heartOutline3]);
+        //lock it to the camera
+        hud.setScrollFactor(0);
+
+        //create our particle effects for when in invincible mode
+        var particles = this.add.particles('dust');
+        emitter = particles.createEmitter();
+        emitter.setPosition(player.x, player.y);
+        emitter.setSpeed(150);
+        emitter.setBlendMode(Phaser.BlendModes.ADD);
+        //turn it off for now until we are invincible
+        emitter.pause();
+
+        camera = this.cameras.main;
+        camera.setBounds(0, 0, 1630, 600);
+        camera.startFollow(player, true, 0.05, 0.05, -200, 120);
+        camera.setFollowOffset(-200, 120);
+
+
         this.physics.add.collider(player, platforms);
-        this.physics.add.collider(baddie, platforms);
+        this.physics.add.collider(baddies, platforms);
         this.physics.add.collider(coins, platforms);
-        this.physics.add.collider(shell, platforms);
+        this.physics.add.collider(shell, platforms, shellWallHit, null, this);
+        this.physics.add.collider(invicibility, platforms);
         this.physics.add.collider(player, shell, shellHit, null, this);
+        this.physics.add.collider(player, spikes, playerHit, null, this);
         this.physics.add.overlap(player, coins, collectCoin, null, this);
-        this.physics.add.overlap(player, baddie, hitBaddie, null, this);
+        this.physics.add.overlap(player, invicibility, goInvincibile, null, this);
+        this.physics.add.overlap(player, baddies, hitBaddie, null, this);
         this.physics.add.overlap(player, ladders, isOnLadder, null, this);
         this.physics.add.collider(player, ladders, null, checkLadderTop, this);
-        this.physics.add.overlap(shell, baddie, shellHitBaddie, null, this);
+        this.physics.add.overlap(shell, baddies, shellHitBaddie, null, this);
+        this.physics.add.collider(shell, spikes, destroyShell, null, this);
     }
 
     function hitBaddie(player, baddie) {
-        //baddie was hit on the head and hasn't already been hit
-        if (baddie.body.touching.up && !baddie.hit) {
-            // set baddie as being hit and remove physics
+        if (player.invincible) {
             baddie.disableBody(false, false);
-            player.setVelocityY(jumpVelocity);
-
-            //play baddies death animation
+            //play baddies super death animation
             var tween = this.tweens.add({
                 targets: baddie,
                 alpha: 0.3,
-                scaleX: 1.5,
-                scaleY: 1.5,
+                y: "-=150",
+                scaleX: 2.5,
+                scaleY: 2.5,
+                angle: 180,
                 ease: 'Linear',
                 duration: 200,
                 onComplete: function() {
                     destroyGameObject(baddie);
                 },
             });
-        }
-        //otherwise you've hit baddie, BUT not on the head. This makes you die
-        else {
-            //if you are not already invulnerable
-            if (!player.invulnerable) {
-                //set player as invulnerable
-                player.invulnerable = true;
-                //get the heart sprites from our arrays we set up earlier
-                var currentHeartCount = player.hearts,
-                    currentHeart = hearts[currentHeartCount - 1],
-                    currentHeartOutline = heartOutlines[currentHeartCount - 1];
+        } else {
+            //baddie was hit on the head and hasn't already been hit
+            if (baddie.body.touching.up && !baddie.hit) {
+                // set baddie as being hit and remove physics
+                baddie.disableBody(false, false);
+                player.setVelocityY(jumpVelocity);
 
-                //fade out the heart fill
-                var heartFade = this.tweens.add({
-                    targets: currentHeart,
-                    alpha: 0,
-                    scaleX: 0,
-                    scaleY: 0,
+                //play baddies death animation
+                var tween = this.tweens.add({
+                    targets: baddie,
+                    alpha: 0.3,
+                    scaleX: 1.5,
+                    scaleY: 1.5,
                     ease: 'Linear',
-                    duration: 200
+                    duration: 200,
+                    onComplete: function() {
+                        destroyGameObject(baddie);
+                    },
+                });
+            }
+            //otherwise you've hit baddie, BUT not on the head. This makes you die
+            else {
+                playerHit.call(this);
+            }
+        }
+    }
+
+    function playerHit() {
+        //if you are not already invulnerable OR invincible
+        if (!player.invulnerable && !player.invincible) {
+            //set player as invulnerable
+            player.invulnerable = true;
+            //get the heart sprites from our arrays we set up earlier
+            var currentHeartCount = player.hearts,
+                currentHeart = hearts[currentHeartCount - 1],
+                currentHeartOutline = heartOutlines[currentHeartCount - 1];
+
+            //fade out the heart fill
+            var heartFade = this.tweens.add({
+                targets: currentHeart,
+                alpha: 0,
+                scaleX: 0,
+                scaleY: 0,
+                ease: 'Linear',
+                duration: 200
+            });
+
+            //create a timeline of tweens for the heart outline so it shrinks then grows back
+            var heartsTimeline = this.tweens.createTimeline();
+
+            //this is the heart outline scaling down
+            heartsTimeline.add({
+                targets: currentHeartOutline,
+                scaleX: 0.5,
+                scaleY: 0.5,
+                ease: 'Power1',
+                duration: 200
+            });
+
+            //and then back
+            heartsTimeline.add({
+                targets: currentHeartOutline,
+                scaleX: 1,
+                scaleY: 1,
+                ease: 'Power1',
+                duration: 200
+            });
+            //play the timeline straight away
+            heartsTimeline.play();
+
+            //remove a heart from out count stored on the player object
+            player.hearts -= 1;
+
+            //if hearts is 0 or less you're dead as you are out of lives
+            if (player.hearts <= 0) {
+                //remove physics from player
+                player.disableBody(false, false);
+                //and play death animation
+                var tween = this.tweens.add({
+                    targets: player,
+                    alpha: 0.3,
+                    scaleX: 1.1,
+                    scaleY: 1.1,
+                    angle: 90,
+                    x: player.x - 20,
+                    y: player.y - 20,
+                    ease: 'Linear',
+                    duration: 200,
+                    onComplete: function() {
+                        restartGame(this);
+                    },
+                    onCompleteScope: this
+                });
+            }
+            //otherwise you're not dead you've just lost a life so...
+            else {
+                //make the player stop in their tracks and jump up
+                player.body.velocity.x = 0;
+                player.body.velocity.y = -220;
+                //tween the players alpha to 30%
+                var tween = this.tweens.add({
+                    targets: player,
+                    alpha: 0.3,
+                    ease: 'Linear',
+                    duration: 200,
+                    onCompleteScope: this
                 });
 
-                //create a timeline of tweens for the heart outline so it shrinks then grows back
-                var heartsTimeline = this.tweens.createTimeline();
-
-                //this is the heart outline scaling down
-                heartsTimeline.add({
-                    targets: currentHeartOutline,
-                    scaleX: 0.5,
-                    scaleY: 0.5,
-                    ease: 'Power1',
-                    duration: 200
-                });
-
-                //and then back
-                heartsTimeline.add({
-                    targets: currentHeartOutline,
-                    scaleX: 1,
-                    scaleY: 1,
-                    ease: 'Power1',
-                    duration: 200
-                });
-                //play the timeline straight away
-                heartsTimeline.play();
-
-                //remove a heart from out count stored on the player object
-                player.hearts -= 1;
-
-                //if hearts is 0 or less you're dead as you are out of lives
-                if (player.hearts <= 0) {
-                    //remove physics from player
-                    player.disableBody(false, false);
-                    //and play death animation
-                    var tween = this.tweens.add({
-                        targets: player,
-                        alpha: 0.3,
-                        scaleX: 1.1,
-                        scaleY: 1.1,
-                        angle: 90,
-                        x: player.x - 20,
-                        y: player.y - 20,
-                        ease: 'Linear',
-                        duration: 200,
-                        onComplete: function() {
-                            restartGame(this);
-                        },
-                        onCompleteScope: this
-                    });
-                }
-                //otherwise you're not dead you've just lost a life so...
-                else {
-                    //make the player stop in their tracks and jump up
-                    player.body.velocity.x = 0;
-                    player.body.velocity.y = -220;
-                    //tween the players alpha to 30%
-                    var tween = this.tweens.add({
-                        targets: player,
-                        alpha: 0.3,
-                        ease: 'Linear',
-                        duration: 200,
-                        onCompleteScope: this
-                    });
-
-                    //set a timer for 1 second. When this is up we tween player back to normal and make then vulnerable again
-                    var timer = this.time.delayedCall(vulnerableTime, playerVulnerable, [this]);
-                }
+                //set a timer for 1 second. When this is up we tween player back to normal and make then vulnerable again
+                var timer = this.time.delayedCall(vulnerableTime, playerVulnerable, [this]);
             }
         }
     }
@@ -308,22 +395,14 @@
                 },
             });
 
-            //disable physics of shell
-            shell.disableBody(false, false);
-            //play shell hit animation
-            var tween2 = this.tweens.add({
-                targets: shell,
-                alpha: 0.3,
-                scaleX: 2,
-                scaleY: 2,
-                y: "-=100",
-                rotation: -360,
-                ease: 'Linear',
-                duration: 200,
-                onComplete: function() {
-                    destroyGameObject(shell);
-                },
-            });
+            destroyShell.call(this);
+        }
+    }
+
+    function shellWallHit(shell, wall) {
+        //if shell has hit a wall with either the right of left side of itself it should be destroyed
+        if (shell.body.onWall()) {
+            destroyShell.call(this);
         }
     }
 
@@ -349,6 +428,25 @@
         }
         //make player react to shell by bouncing slightly
         player.body.velocity.y = -200;
+    }
+
+    function destroyShell() {
+        //disable physics of shell
+        shell.disableBody(false, false);
+        //play shell hit animation
+        var destroyShell = this.tweens.add({
+            targets: shell,
+            alpha: 0.3,
+            scaleX: 2,
+            scaleY: 2,
+            y: "-=100",
+            rotation: -360,
+            ease: 'Linear',
+            duration: 200,
+            onComplete: function() {
+                destroyGameObject(shell);
+            },
+        });
     }
 
     function restartGame(game) {
@@ -399,10 +497,12 @@
     }
 
     //called when player overlaps ladder
-    function isOnLadder() {
-        //set ladder flag to true and remove gravity
-        onLadder = true;
-        player.body.setAllowGravity(false);
+    function isOnLadder(player, ladder) {
+        //set ladder flag to true and remove gravity but only if not at the top of the ladder
+        if (Math.floor(player.y) + (player.height / 2) > ladder.y - (ladder.height / 2)) {
+            onLadder = true;
+            player.body.setAllowGravity(false);
+        }
     }
 
     //called when player collides with ladder
@@ -424,6 +524,7 @@
     }
 
     function update() {
+        emitter.setPosition(player.x, player.y);
         //built in arcade physics functions of blocked and touching to test for collisions in a given direction
         var standing = player.body.blocked.down || player.body.touching.down,
             //get current time in seconds
@@ -439,9 +540,15 @@
             moveRight(acceleration);
         }
 
-        if (Math.abs(baddie.x - baddie.previousX) >= baddie.maxDistance) {
-            switchDirection(baddie);
-        }
+        //loop through baddies group and for each baddie...
+        baddies.getChildren().forEach(function(theBaddie) {
+            //check if it's time for them to turn around
+            if (Math.abs(theBaddie.x - theBaddie.previousX) >= theBaddie.maxDistance) {
+                switchDirection(theBaddie);
+            }
+        }, this);
+
+
 
         //if either touch pointer is down. Two thumbs, two pointers
         if (this.input.pointer1.isDown || this.input.pointer2.isDown) {
@@ -712,6 +819,59 @@
         }
         score += 10;
         scoreText.setText(score);
+    }
+
+    function goInvincibile(player, invicibility) {
+        //stop invicibility for being collected twice, as it will stick around on the screen as it animnates
+        invicibility.disableBody(false, false);
+        //change players max velocity so they can go super fast
+        player.body.maxVelocity.x = superPlayerSpeed;
+        //start our emitter
+        emitter.resume();
+
+        //flash animations using a tint
+        this.tweens.addCounter({
+            from: 0,
+            to: 100,
+            duration: 500,
+            yoyo: true,
+            repeat: 5,
+            onUpdate: function(tween) {
+                var value = Math.floor(tween.getValue());
+                var newColorObject = Phaser.Display.Color.Interpolate.ColorWithColor(heroColor, invincibleColor, 100, value);
+                var color = Phaser.Display.Color.GetColor(newColorObject.r, newColorObject.g, newColorObject.b);
+                player.setTint(color);
+            },
+            onComplete: function() {
+                resetInvincibility();
+            }
+        });
+
+        //tween powerup to scale up and disappear
+        var tween = this.tweens.add({
+            targets: invicibility,
+            alpha: 0.3,
+            angle: 90,
+            scaleX: 3,
+            scaleY: 3,
+            ease: 'Linear',
+            duration: 500,
+            onComplete: function() {
+                destroyGameObject(invicibility);
+            },
+        });
+        //set players invincible flag to true
+        player.invincible = true;
+    }
+
+    function resetInvincibility() {
+        //reset the invincible flag
+        player.invincible = false;
+        //reset max speed of player
+        player.body.maxVelocity.x = maxPlayerSpeed;
+        //pause emitter and remove any existing particles
+        emitter.pause();
+        emitter.killAll();
     }
 
     //rotate score coin and make bigger before shrinking again

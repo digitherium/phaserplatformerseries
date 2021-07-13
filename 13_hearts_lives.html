@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Shells - Phaser Platformer series</title>
+    <title>Hearts - Phaser Platformer series</title>
     <script src="js/phaser.min.js"></script>
     <link rel="stylesheet" href="css/screen.css">
 </head>
@@ -39,6 +39,10 @@
         cursors,
         score = 0,
         scoreText,
+        heartOutlines = [],
+        hearts = [],
+        maxHearts = 3,
+        vulnerableTime = 1000,
         acceleration = 600,
         jumpVelocity = -330,
         wasStanding = false,
@@ -70,6 +74,8 @@
         this.load.image('baddie', 'baddie.jpg');
         this.load.image('ladder', 'ladder.png');
         this.load.image('shell', 'shell.png');
+        this.load.image('heart', 'heart.png');
+        this.load.image('heart-filled', 'heart-filled.png');
         this.load.image("logo", "digitherium-logo.jpg");
         this.load.image('touch-slider', 'touch-slider.png');
         this.load.image('touch-knob', 'touch-knob.png');
@@ -95,6 +101,10 @@
         player = this.physics.add.sprite(100, 350, 'hero');
         player.setOrigin(.5, .5);
         player.setCollideWorldBounds(true);
+        //create and set an invulnerable flag for after the player has been hit
+        player.invulnerable = false;
+        //set no lives / hearts
+        player.hearts = maxHearts;
 
         baddie = this.physics.add.sprite(620, 350, 'baddie');
         baddie.setOrigin(.5, .5);
@@ -103,7 +113,7 @@
         baddie.maxDistance = 300;
         baddie.previousX = baddie.x;
 
-        shell = this.physics.add.sprite(200, 350, 'shell');
+        shell = this.physics.add.sprite(700, 360, 'shell');
         shell.setOrigin(.5, .5);
 
         buildTouchSlider(this);
@@ -131,6 +141,21 @@
         scoreCoin.scaleY = .5;
         scoreText = this.add.text(46, 20, '0', { fontSize: '24px', fill: '#fff' });
 
+        //create three heart outlines...
+        var heartOutline1 = this.add.sprite(760, 38, 'heart'),
+            heartOutline2 = this.add.sprite(720, 38, 'heart'),
+            heartOutline3 = this.add.sprite(680, 38, 'heart');
+
+        //and store in an array for easy access later
+        heartOutlines = [heartOutline1, heartOutline2, heartOutline3];
+
+        //create three heart fills...
+        heart1 = this.add.sprite(760, 38, 'heart-filled');
+        heart2 = this.add.sprite(720, 38, 'heart-filled');
+        heart3 = this.add.sprite(680, 38, 'heart-filled');
+        //and store in an array for easy access later
+        hearts = [heart1, heart2, heart3];
+
         this.physics.add.collider(player, platforms);
         this.physics.add.collider(baddie, platforms);
         this.physics.add.collider(coins, platforms);
@@ -144,11 +169,13 @@
     }
 
     function hitBaddie(player, baddie) {
+        //baddie was hit on the head and hasn't already been hit
         if (baddie.body.touching.up && !baddie.hit) {
             // set baddie as being hit and remove physics
             baddie.disableBody(false, false);
             player.setVelocityY(jumpVelocity);
 
+            //play baddies death animation
             var tween = this.tweens.add({
                 targets: baddie,
                 alpha: 0.3,
@@ -161,27 +188,107 @@
                 },
             });
         }
-        //otherwise you've hit baddie, but not on the head. This makes you die
+        //otherwise you've hit baddie, BUT not on the head. This makes you die
         else {
-            //set player to dead
+            //if you are not already invulnerable
+            if (!player.invulnerable) {
+                //set player as invulnerable
+                player.invulnerable = true;
+                //get the heart sprites from our arrays we set up earlier
+                var currentHeartCount = player.hearts,
+                    currentHeart = hearts[currentHeartCount - 1],
+                    currentHeartOutline = heartOutlines[currentHeartCount - 1];
 
-            player.disableBody(false, false);
-            var tween = this.tweens.add({
-                targets: player,
-                alpha: 0.3,
-                scaleX: 1.1,
-                scaleY: 1.1,
-                angle: 90,
-                x: player.x - 20,
-                y: player.y - 20,
-                ease: 'Linear',
-                duration: 200,
-                onComplete: function() {
-                    restartGame(this);
-                },
-                onCompleteScope: this
-            });
+                //fade out the heart fill
+                var heartFade = this.tweens.add({
+                    targets: currentHeart,
+                    alpha: 0,
+                    scaleX: 0,
+                    scaleY: 0,
+                    ease: 'Linear',
+                    duration: 200
+                });
+
+                //create a timeline of tweens for the heart outline so it shrinks then grows back
+                var heartsTimeline = this.tweens.createTimeline();
+
+                //this is the heart outline scaling down
+                heartsTimeline.add({
+                    targets: currentHeartOutline,
+                    scaleX: 0.5,
+                    scaleY: 0.5,
+                    ease: 'Power1',
+                    duration: 200
+                });
+
+                //and then back
+                heartsTimeline.add({
+                    targets: currentHeartOutline,
+                    scaleX: 1,
+                    scaleY: 1,
+                    ease: 'Power1',
+                    duration: 200
+                });
+                //play the timeline straight away
+                heartsTimeline.play();
+
+                //remove a heart from out count stored on the player object
+                player.hearts -= 1;
+
+                //if hearts is 0 or less you're dead as you are out of lives
+                if (player.hearts <= 0) {
+                    //remove physics from player
+                    player.disableBody(false, false);
+                    //and play death animation
+                    var tween = this.tweens.add({
+                        targets: player,
+                        alpha: 0.3,
+                        scaleX: 1.1,
+                        scaleY: 1.1,
+                        angle: 90,
+                        x: player.x - 20,
+                        y: player.y - 20,
+                        ease: 'Linear',
+                        duration: 200,
+                        onComplete: function() {
+                            restartGame(this);
+                        },
+                        onCompleteScope: this
+                    });
+                }
+                //otherwise you're not dead you've just lost a life so...
+                else {
+                    //make the player stop in their tracks and jump up
+                    player.body.velocity.x = 0;
+                    player.body.velocity.y = -220;
+                    //tween the players alpha to 30%
+                    var tween = this.tweens.add({
+                        targets: player,
+                        alpha: 0.3,
+                        ease: 'Linear',
+                        duration: 200,
+                        onCompleteScope: this
+                    });
+
+                    //set a timer for 1 second. When this is up we tween player back to normal and make then vulnerable again
+                    var timer = this.time.delayedCall(vulnerableTime, playerVulnerable, [this]);
+                }
+            }
         }
+    }
+
+    function playerVulnerable(game) {
+        //tween player back to 100% opacity and reset invulnerability flag
+        var death = game.tweens.add({
+            targets: player,
+            alpha: 1,
+            ease: 'Linear',
+            duration: 200,
+            onComplete: function() {
+                player.invulnerable = false;
+            },
+            onCompleteScope: this
+        });
     }
 
     function shellHitBaddie(shell, baddie) {

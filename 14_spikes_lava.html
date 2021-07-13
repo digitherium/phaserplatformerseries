@@ -74,7 +74,7 @@
         this.load.image('hero', 'hero.jpg');
         this.load.image('baddie', 'baddie.jpg');
         this.load.image('ladder', 'ladder.png');
-        this.load.image('shell', 'shell.jpg');
+        this.load.image('shell', 'shell.png');
         this.load.image('spikes', 'spikes.png');
         this.load.image('heart', 'heart.png');
         this.load.image('heart-filled', 'heart-filled.png');
@@ -421,10 +421,12 @@
     }
 
     //called when player overlaps ladder
-    function isOnLadder() {
-        //set ladder flag to true and remove gravity
-        onLadder = true;
-        player.body.setAllowGravity(false);
+    function isOnLadder(player, ladder) {
+        //set ladder flag to true and remove gravity but only if not at the top of the ladder
+        if (Math.floor(player.y) + (player.height / 2) > ladder.y - (ladder.height / 2)) {
+            onLadder = true;
+            player.body.setAllowGravity(false);
+        }
     }
 
     //called when player collides with ladder
