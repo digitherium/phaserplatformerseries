@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Camera Follow - Phaser Platformer series</title>
+    <title>Mushrooms - Phaser Platformer series</title>
     <script src="js/phaser.min.js"></script>
     <link rel="stylesheet" href="css/screen.css">
 </head>
@@ -47,7 +47,9 @@
         acceleration = 600,
         maxPlayerSpeed = 200,
         superPlayerSpeed = 400,
-        jumpVelocity = -330,
+        jumpVelocity = -165,
+        jumpVelocitySmall = -165,
+        jumpVelocityBig = -330,
         wasStanding = false,
         onLadder = false,
         edgeTimer = 0,
@@ -68,6 +70,7 @@
         shellSpeed = 500,
         spikes,
         invicibility,
+        mushroom,
         emitter,
         heroColor = new Phaser.Display.Color(255, 255, 255),
         invincibleColor = new Phaser.Display.Color(56, 194, 239),
@@ -82,6 +85,7 @@
         this.load.image('ground', 'platform.jpg');
         this.load.image('coin', 'coin.jpg');
         this.load.image('hero', 'hero.jpg');
+        this.load.image('hero-small', 'hero-small.jpg');
         this.load.image('baddie', 'baddie.jpg');
         this.load.image('ladder', 'ladder.png');
         this.load.image('shell', 'shell.png');
@@ -102,7 +106,7 @@
 
         this.input.addPointer(1);
         platforms = this.physics.add.staticGroup();
-        this.physics.world.setBounds(0, 0, 1630, 800);
+        this.physics.world.setBounds(0, 0, 1630, 600);
 
         platforms.create(1300, 400, 'ground').setScale(2).refreshBody();
         platforms.create(400, 400, 'ground').setScale(2).refreshBody();
@@ -119,7 +123,7 @@
         spikes = spikes.create(850, 415, 'spikes');
         spikes.body.immovable = true;
 
-        player = this.physics.add.sprite(40, 350, 'hero');
+        player = this.physics.add.sprite(40, 350, 'hero-small');
         player.setOrigin(.5, .5);
         player.setDrag(1);
         player.setCollideWorldBounds(true);
@@ -157,12 +161,19 @@
         invicibility = this.physics.add.sprite(256, 214, 'powerup');
         invicibility.setOrigin(.5, .5);
 
+        //add mushroom powerup, set it to rotate around its center and tint it orange
+        mushroom = this.physics.add.sprite(120, 360, 'powerup');
+        mushroom.setOrigin(.5, .5);
+        mushroom.setTintFill(0xff9800);
+
         buildTouchSlider(this);
         //Set bounce to 0, so our hero just lands directly
         player.setBounce(0);
         //Set top speeds
         player.body.maxVelocity.x = maxPlayerSpeed;
         player.body.maxVelocity.y = 500;
+        player.isBig = false;
+        player.isChangingSize = false;
 
         cursors = this.input.keyboard.createCursorKeys();
 
@@ -223,10 +234,12 @@
         this.physics.add.collider(coins, platforms);
         this.physics.add.collider(shell, platforms, shellWallHit, null, this);
         this.physics.add.collider(invicibility, platforms);
+        this.physics.add.collider(mushroom, platforms);
         this.physics.add.collider(player, shell, shellHit, null, this);
         this.physics.add.collider(player, spikes, playerHit, null, this);
         this.physics.add.overlap(player, coins, collectCoin, null, this);
         this.physics.add.overlap(player, invicibility, goInvincibile, null, this);
+        this.physics.add.overlap(player, mushroom, collectMushroom, null, this);
         this.physics.add.overlap(player, baddies, hitBaddie, null, this);
         this.physics.add.overlap(player, ladders, isOnLadder, null, this);
         this.physics.add.collider(player, ladders, null, checkLadderTop, this);
@@ -252,8 +265,8 @@
                 },
             });
         } else {
-            //baddie was hit on the head and hasn't already been hit
-            if (baddie.body.touching.up && !baddie.hit) {
+            //baddie was hit on the head and hasn't already been hit, and not animating shrink
+            if (baddie.body.touching.up && !baddie.hit && !player.isChangingSize) {
                 // set baddie as being hit and remove physics
                 baddie.disableBody(false, false);
                 player.setVelocityY(jumpVelocity);
@@ -347,17 +360,37 @@
             }
             //otherwise you're not dead you've just lost a life so...
             else {
-                //make the player stop in their tracks and jump up
-                player.body.velocity.x = 0;
-                player.body.velocity.y = -220;
-                //tween the players alpha to 30%
-                var tween = this.tweens.add({
-                    targets: player,
-                    alpha: 0.3,
-                    ease: 'Linear',
-                    duration: 200,
-                    onCompleteScope: this
-                });
+                if (player.isBig) {
+                    player.body.velocity.x = 0;
+                    player.body.velocity.y = -220;
+                    player.isChangingSize = true;
+
+                    var tween = this.tweens.add({
+                        targets: player,
+                        scaleX: 0.8,
+                        scaleY: 0.8,
+                        alpha: 0.3,
+                        yoyo: 2,
+                        repeat: 2,
+                        ease: 'Linear',
+                        duration: 100,
+                        onComplete: function() {
+                            shrinkHero();
+                        },
+                    });
+                } else {
+                    //make the player stop in their tracks and jump up
+                    player.body.velocity.x = 0;
+                    player.body.velocity.y = -220;
+                    //tween the players alpha to 30%
+                    var tween = this.tweens.add({
+                        targets: player,
+                        alpha: 0.3,
+                        ease: 'Linear',
+                        duration: 200,
+                        onCompleteScope: this
+                    });
+                }
 
                 //set a timer for 1 second. When this is up we tween player back to normal and make then vulnerable again
                 var timer = this.time.delayedCall(vulnerableTime, playerVulnerable, [this]);
@@ -525,6 +558,10 @@
     }
 
     function update() {
+        //set jump velocity depending on whether we are big or small
+        if (player.isBig) jumpVelocity = jumpVelocityBig;
+        else jumpVelocity = jumpVelocitySmall;
+
         emitter.setPosition(player.x, player.y);
         //built in arcade physics functions of blocked and touching to test for collisions in a given direction
         var standing = player.body.blocked.down || player.body.touching.down,
@@ -822,9 +859,70 @@
         scoreText.setText(score);
     }
 
+    function growHero() {
+        //change sprite to be our larger one
+        player.setTexture("hero");
+        //manually change the size
+        player.setSize(32, 32);
+        //set flag we know the player is in big mode
+        player.isBig = true;
+    }
+
+    function shrinkHero() {
+        //change player to smaller sprire
+        player.setTexture("hero-small");
+        //manually resize so physics adjusts
+        player.setSize(22, 22);
+        //set isBig for false so we know the player is small
+        player.isBig = false;
+        //reset our transitional flag
+        player.isChangingSize = false;
+    }
+
+    function collectMushroom(player, mushroom) {
+        //stop the players movement
+        player.body.velocity.x = 0;
+        player.body.velocity.y = 0;
+        //set a flag saying the player is transitioning sizes
+        player.isChangingSize = true;
+
+        //disable the mushroom so it can only be triggered once
+        mushroom.disableBody(false, false);
+
+        //tween the player scaling up in size
+        var tween = this.tweens.add({
+            targets: player,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            yoyo: 1,
+            repeat: 1,
+            ease: 'Linear',
+            duration: 100,
+            onComplete: function() {
+                //when the tween is over call this function
+                growHero();
+            },
+        });
+
+        //tween powerup to scale up and then remove
+        var tween = this.tweens.add({
+            targets: mushroom,
+            alpha: 0.3,
+            angle: 90,
+            scaleX: 0.3,
+            scaleY: 0.3,
+            ease: 'Linear',
+            duration: 500,
+            onComplete: function() {
+                destroyGameObject(mushroom);
+            },
+        });
+    }
+
     function goInvincibile(player, invicibility) {
-        //stop invicibility for being collected twice, as it will stick around on the screen as it animnates
+        //stop invicibility for being collected twice, as it will stick around on the screen as it aninimates
         invicibility.disableBody(false, false);
+
         //change players max velocity so they can go super fast
         player.body.maxVelocity.x = superPlayerSpeed;
         //start our emitter
@@ -853,8 +951,8 @@
             targets: invicibility,
             alpha: 0.3,
             angle: 90,
-            scaleX: 3,
-            scaleY: 3,
+            scaleX: 0.3,
+            scaleY: 0.3,
             ease: 'Linear',
             duration: 500,
             onComplete: function() {
