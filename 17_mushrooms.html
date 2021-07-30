@@ -103,6 +103,7 @@
         var logo = this.add.sprite(config.width / 2, config.height / 2, 'logo');
         logo.alpha = 0.4;
         logo.setScale(0.5);
+        logo.setScrollFactor(0.2);
 
         this.input.addPointer(1);
         platforms = this.physics.add.staticGroup();
