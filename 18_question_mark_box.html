@@ -76,12 +76,12 @@
         heroColor = new Phaser.Display.Color(255, 255, 255),
         invincibleColor = new Phaser.Display.Color(56, 194, 239),
         camera,
-        hud;
+        hud,
+        coinTweens = [];
 
     var game = new Phaser.Game(config);
 
     function preload() {
-        // this.load.setBaseURL("https://digitherium.com/codepen/phaserplatformer/");
         this.load.setBaseURL("assets/");
         this.load.image('ground', 'platform.jpg');
         this.load.image('coin', 'coin.jpg');
@@ -103,14 +103,14 @@
     }
 
     function create() {
-        var logo = this.add.sprite(config.width / 2, config.height / 2, 'logo');
+        var logo = this.add.sprite(config.width / 2, 240, 'logo');
         logo.alpha = 0.4;
         logo.setScale(0.5);
         logo.setScrollFactor(0.2);
 
         this.input.addPointer(1);
         platforms = this.physics.add.staticGroup();
-        this.physics.world.setBounds(0, 0, 1630, 600);
+        this.physics.world.setBounds(0, 0, 1630, 400);
 
         platforms.create(1300, 400, 'ground').setScale(2).refreshBody();
         platforms.create(400, 400, 'ground').setScale(2).refreshBody();
@@ -236,7 +236,7 @@
         emitter.pause();
 
         camera = this.cameras.main;
-        camera.setBounds(0, 0, 1630, 600);
+        camera.setBounds(0, 0, 1630, 400);
         camera.startFollow(player, true, 0.05, 0, -200, 120);
         camera.setFollowOffset(-200, 120);
 
@@ -571,6 +571,12 @@
     }
 
     function update() {
+        //loop through any coin tweens
+        for (var i = 0; i < coinTweens.length; i++) {
+            var tween = coinTweens[i];
+            //if we find a tween update it to the new position of the scoreCoin
+            if (tween) tween.updateTo("x", camera.scrollX + scoreCoin.x);
+        }
         //set jump velocity depending on whether we are big or small
         if (player.isBig) jumpVelocity = jumpVelocityBig;
         else jumpVelocity = jumpVelocitySmall;
@@ -842,7 +848,7 @@
         coin.disableBody(false, false);
 
         //tween coin to score coin in corner shrink
-        var tween = this.tweens.add({
+        var collectCoinTween = this.tweens.add({
             targets: coin,
             alpha: 0.3,
             angle: 720,
@@ -854,8 +860,11 @@
             duration: 500,
             onComplete: function() {
                 destroyGameObject(coin);
+                coinTweens.shift();
             },
         });
+        //add the tween to the tweens array
+        coinTweens.push(collectCoinTween);
 
         //check if we already have an animation
         if (scoreCoinTimeline) {
