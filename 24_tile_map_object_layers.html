@@ -1,0 +1,1367 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Tile Map Object Layers - Phaser Platformer series</title>
+    <script src="js/phaser.min.js"></script>
+    <link rel="stylesheet" href="css/screen.css">
+</head>
+
+<body>
+    <script type="text/javascript">
+    //We now have 3 scenes. To start with the start Screen
+    var titleScreen = new Phaser.Scene("titleScreen");
+
+    titleScreen.preload = function() {
+        this.load.setBaseURL("assets/");
+        this.load.image("coin-particle", "coin.jpg");
+        this.load.image("burst", "burst.png");
+        this.load.image('hero', 'hero.jpg');
+        //googles webfont script to load fonts
+        this.load.script('webfont', 'https://ajax.googleapis.com/ajax/libs/webfont/1.6.26/webfont.js');
+    }
+
+    titleScreen.create = function() {
+        //create a particle emitter
+        var particles = this.add.particles('coin-particle'),
+            //create an area that matches size of game for particles to appear
+            emitZone = new Phaser.Geom.Rectangle(0, 0, 800, 400),
+            //create a particle emitter
+            emitter = particles.createEmitter({
+                speed: { min: -40, max: 40 },
+                lifespan: 2000,
+                //try changing this
+                //quantity: 1,
+                scale: { min: 0.1, max: 0.2 },
+                alpha: { start: 0.6, end: 0 },
+                blendMode: 'ADD',
+                emitZone: { source: emitZone },
+                maxParticles: 0
+            });
+        //add our gradient burst graphic
+        var burst = this.add.sprite(config.width / 2, config.height / 2 - 40, 'burst');
+        burst.setScale(0.7);
+
+        //make it spin
+        var burstTween = this.tweens.add({
+            targets: burst,
+            angle: 360,
+            repeat: -1,
+            ease: 'Linear',
+            duration: 12000
+        });
+
+
+
+        //position our hero sprite in the middle of the burst
+        this.add.sprite(config.width / 2, config.height / 2 - 40, 'hero');
+
+        //store reference to the scene here because of scope inside the webfont loader
+        var scene = this;
+
+        //Make sure our google font has loaded before we attempt to write text to the screen
+        WebFont.load({
+            google: {
+                families: ['Josefin Sans:700']
+            },
+            active: function() {
+                //eate text using our google font
+                scene.add.text(config.width / 2, config.height / 2 + 70, 'SUPER SQUARE BOY!', { fontFamily: 'Josefin Sans', fontSize: 32, color: '#edbc45', align: 'center' }).setShadow(4, 4, "#000000", 2, false, true).setOrigin(0.5);
+
+                scene.add.text(config.width / 2, config.height / 2 + 120, 'CLICK OR TAP TO PLAY', { fontFamily: 'Josefin Sans', fontSize: 22, color: '#ef5e5e', align: 'center' }).setShadow(4, 4, "#000000", 2, false, true).setOrigin(0.5)
+            }
+        });
+
+        //add click / tap to start game
+        this.input.on('pointerdown', function(pointer) {
+            game.scene.switch('titleScreen', 'game');
+        });
+    }
+
+    var endScreen = new Phaser.Scene("endScreen");
+
+    endScreen.create = function() {
+        var particles = this.add.particles('coin-particle'),
+            emitZone = new Phaser.Geom.Rectangle(0, 0, 800, 600),
+            emitter = particles.createEmitter({
+                speed: { min: -40, max: 40 },
+                lifespan: 2000,
+                scale: { min: 0.1, max: 0.2 },
+                alpha: { start: 0.6, end: 0 },
+                blendMode: 'ADD',
+                emitZone: { source: emitZone }
+            });
+
+        var burst = this.add.sprite(config.width / 2, config.height / 2 - 40, 'burst');
+        burst.setScale(0.7);
+
+        var tween = this.tweens.add({
+            targets: burst,
+            angle: 360,
+            repeat: -1,
+            ease: 'Linear',
+            duration: 12000
+        });
+
+        //position our hero sprite in the middle of the burst
+        this.add.sprite(config.width / 2, config.height / 2 - 40, 'hero');
+
+        //font has already been loaded, so no need to wait for it        
+        this.add.text(config.width / 2, config.height / 2 + 70, 'GAME OVER!', { fontFamily: 'Josefin Sans', fontSize: 32, align: 'center', color: '#edbc45' }).setShadow(4, 4, "#000000", 2, false, true).setOrigin(0.5);
+
+        this.add.text(config.width / 2, config.height / 2 + 120, 'CLICK OR TAP TO PLAY AGAIN', { fontFamily: 'Josefin Sans', fontSize: 22, align: 'center', color: '#ef5e5e' }).setShadow(4, 4, "#000000", 2, false, true).setOrigin(0.5);
+
+        this.input.on('pointerdown', function(pointer) {
+            gameScene.scene.restart();
+            game.scene.switch('endScreen', 'game');
+        });
+    }
+
+    var gameScene = new Phaser.Scene("game");
+
+
+    //the majority of the global variables are now initialised here
+    gameScene.init = function() {
+        this.score = 0;
+        this.maxHearts = 3;
+        this.vulnerableTime = 1000;
+        this.acceleration = 600;
+        this.maxPlayerSpeed = 200;
+        this.superPlayerSpeed = 400;
+        this.jumpVelocity = -165;
+        this.jumpVelocitySmall = -165;
+        this.jumpVelocityBig = -330;
+        this.standing = true;
+        this.wasStanding = false;
+        this.onLadder = false;
+        this.edgeTimer = 0;
+        this.prevPos = 0;
+        this.yPos = 0;
+        this.touchJump = false;
+        this.touchJumpThreshold = 5;
+        this.touchMoving = false;
+        this.isTouch = false;
+        this.touchMoveThreshold = 3;
+        this.largeThumbMoveAcross = 25;
+        this.thumbSizeOffset = 60;
+        this.shellSpeed = 500;
+        this.heroColor = new Phaser.Display.Color(255, 255, 255);
+        this.invincibleColor = new Phaser.Display.Color(56, 194, 239);
+        this.coinTweens = [];
+        this.baddieVelocity = -60;
+    }
+
+    gameScene.preload = function() {
+        this.load.setBaseURL("assets/");
+        this.load.image('ground', 'platform.jpg');
+        this.load.image('collapsing-platform', 'collapsing-platform.png');
+        this.load.image('collapsing-platform-hot', 'collapsing-platform-hot.png');
+        this.load.image('coin', 'coin-8.png');
+        this.load.image('hero', 'hero.jpg');
+        this.load.image('hero-small', 'hero-16.jpg');
+        this.load.image('baddie', 'baddie-16.jpg');
+        this.load.image('laddertile', 'laddertile.png');
+        this.load.image('shell', 'shell-small.jpg');
+        this.load.image('powerup', 'powerup-16.jpg');
+        this.load.image('question-mark-block', 'question-mark-block-16.jpg');
+        this.load.image('empty-box', 'empty-box-16.jpg');
+        this.load.image('dust', 'dust-small.jpg');
+        this.load.image('heart', 'heart.png');
+        this.load.image('heart-filled', 'heart-filled.png');
+        this.load.image("logo", "digitherium-logo.jpg");
+        this.load.image('touch-slider', 'touch-slider.png');
+        this.load.image('touch-knob', 'touch-knob.png');
+        this.load.image('tiles', '/map/environment-tiles.png');
+        this.load.tilemapTiledJSON('map', '/map/newmap.json');
+
+        this.load.spritesheet('lava',
+            'map/lava.png', { frameWidth: 32, frameHeight: 32 }
+        );
+    }
+
+    gameScene.create = function() {
+        this.addLogo()
+        //main tile map for static elements
+        this.setupTileMap();
+
+        //game objects from object layers in tiled
+        this.createCoins();
+        this.createLadders();
+        this.createBaddies();
+        this.createCollapsingPlatforms();
+
+        this.createPowerups();
+        this.createShells();
+        this.createPlayer();
+        this.createFinish();
+
+        this.setupControls();
+        this.createHUD();
+        this.createEmitter();
+        this.setupCamera();
+        this.setupCollions();
+    }
+
+    gameScene.addLogo = function() {
+        var logo = this.add.sprite(config.width / 2, config.height / 2, 'logo');
+        logo.alpha = 0.4;
+        logo.setScale(0.5);
+        logo.setScrollFactor(0.2);
+    }
+
+    gameScene.setupTileMap = function() {
+        //create our tilemap
+        this.map = this.make.tilemap({ key: 'map' });
+        //set the tileset to use using the name of the tileset in tiled and the name of our tilesheet in preload
+        tiles = this.map.addTilesetImage('environment-tiles', 'tiles');
+
+        //set bounds of our world based on tilemap
+        this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+
+        //create layers from their names in tiled. 
+        this.ground = this.map.createLayer('platforms', tiles);
+        this.lava = this.map.createLayer('lava', tiles);
+        this.foreground = this.map.createLayer('grass', tiles);
+        //change depth so this layer sits in front of everything
+        this.foreground.depth = 10;
+
+        //setup collisions for each tile layer we want. 0,600 are tile indexes
+        //setCollisionBetween(start, stop [, collides] [, recalculateFaces] [, layer])
+        this.map.setCollisionBetween(0, 600, true, false, 'platforms');
+        this.map.setCollisionBetween(0, 600, true, false, 'lava');
+    }
+
+    gameScene.createCoins = function() {
+        this.coins = this.physics.add.staticGroup();
+        this.coinsLayer = this.map.getObjectLayer('coins');
+        this.coinsLayer.objects.forEach(element => this.placeCoins(element));
+    }
+
+    gameScene.createLadders = function() {
+        this.ladders = this.physics.add.staticGroup();
+        this.laddersLayer = this.map.getObjectLayer('ladders');
+        this.laddersLayer.objects.forEach(element => this.placeLadders(element));
+        this.laddersLayer.depth = 1;
+    }
+
+    gameScene.createBaddies = function() {
+        this.baddies = this.physics.add.group();
+        this.baddiesLayer = this.map.getObjectLayer('baddies');
+        this.baddiesLayer.objects.forEach(element => this.placeBaddies(element));
+    }
+
+
+    gameScene.createCollapsingPlatforms = function() {
+        this.collapsingPlatforms = this.physics.add.staticGroup();
+        this.collapsingPlatformsLayer = this.map.getObjectLayer('collapsing');
+        this.collapsingPlatformsLayer.objects.forEach(element => this.placeCollapsingPlatforms(element));
+    }
+
+    gameScene.createPowerups = function() {
+        this.powerupBoxes = this.physics.add.group();
+        this.powerups = this.physics.add.group();
+        this.powerupBoxesLayer = this.map.getObjectLayer('power-ups');
+        this.powerupBoxesLayer.objects.forEach(element => this.placePowerups(element));
+    }
+
+    gameScene.createShells = function() {
+        this.shells = this.physics.add.group();
+        this.shellsLayer = this.map.getObjectLayer('shells');
+        this.shellsLayer.objects.forEach(element => this.placeShells(element));
+    }
+
+    gameScene.createPlayer = function() {
+        this.playerLayer = this.map.getObjectLayer('player');
+        this.playerLayer.objects.forEach(element => this.placePlayer(element));
+    }
+
+    gameScene.createFinish = function() {
+        this.goal = this.physics.add.staticGroup();
+        this.goalLayer = this.map.getObjectLayer('goal');
+        this.goalLayer.objects.forEach(element => this.placeGoal(element));
+    }
+
+
+    gameScene.createHUD = function() {
+        this.scoreCoin = this.add.sprite(30, 34, 'coin');
+        this.scoreCoin.setOrigin(.5, .5);
+        this.scoreCoin.scaleX = 1;
+        this.scoreCoin.scaleY = 1;
+        this.scoreText = this.add.text(46, 17, '0', { fontFamily: 'Josefin Sans', fontSize: '24px', fill: '#fff' });
+        this.scoreCoin.setScrollFactor(0);
+        //create three heart outlines...
+        var heartOutline1 = this.add.sprite(760, 38, 'heart'),
+            heartOutline2 = this.add.sprite(720, 38, 'heart'),
+            heartOutline3 = this.add.sprite(680, 38, 'heart');
+        //and store in an array for easy access later
+        this.heartOutlines = [heartOutline1, heartOutline2, heartOutline3];
+        //create three heart fills...
+        heart1 = this.add.sprite(760, 38, 'heart-filled');
+        heart2 = this.add.sprite(720, 38, 'heart-filled');
+        heart3 = this.add.sprite(680, 38, 'heart-filled');
+        //and store in an array for easy access later
+        this.hearts = [heart1, heart2, heart3];
+        //create a contain for our heads up display and add some sprites
+        hud = this.add.container(0, 0, [this.scoreCoin, this.scoreText, heart1, heart2, heart3, heartOutline1, heartOutline2, heartOutline3]);
+        //lock it to the camera
+        hud.setScrollFactor(0);
+        //add depth
+        hud.depth = 11;
+    }
+
+    gameScene.setupCamera = function() {
+        this.camera = this.cameras.main;
+        this.camera.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+        this.camera.startFollow(this.player, true, 0.1, 0.1);
+    }
+
+    gameScene.createEmitter = function() {
+        //create our particle effects for when in invincible mode
+        var particles = this.add.particles('dust');
+        this.emitter = particles.createEmitter();
+        this.emitter.setPosition(this.player.x, this.player.y);
+        this.emitter.setSpeed(150);
+        this.emitter.setBlendMode(Phaser.BlendModes.ADD);
+        //turn it off for now until we are invincible
+        this.emitter.pause();
+    }
+
+    gameScene.placeCoins = function(tile) {
+        if (tile.index != -1) {
+            //object layer
+            var coin = gameScene.coins.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'coin');
+        }
+    }
+
+    gameScene.placeGoal = function(tile) {
+        if (tile.index != -1) {
+            var finish = this.goal.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'hero-small');
+            this.goal.setVisible(false);
+            this.goalParticles = this.add.particles('coin');
+            this.goalEmitter = this.goalParticles.createEmitter({
+                x: tile.x - (tile.width / 2),
+                y: tile.y - 2,
+                lifespan: 1500,
+                speedY: { min: -60, max: -20 },
+                speedX: { min: -40, max: 40 },
+                angle: { min: 180, max: 360 },
+                gravityY: -20,
+                scale: { start: 0.8, end: 0 },
+                alpha: { start: 1, end: 0 },
+                blendMode: 'SCREEN'
+            });
+        }
+    }
+
+
+    gameScene.placeShells = function(tile) {
+        if (tile.index != -1) {
+            //object layer
+            var shell = this.shells.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'shell');
+            shell.setOrigin(.5, .5);
+            shell.setCollideWorldBounds(true);
+        }
+    }
+
+    gameScene.placePlayer = function(tile) {
+        this.player = this.physics.add.sprite(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'hero-small');
+        this.player.setOrigin(.5, .5);
+        this.player.setDrag(1);
+        this.player.setCollideWorldBounds(true);
+
+        //create and set an invulnerable flag for after the player has been hit
+        this.player.invulnerable = false;
+        //and set an invincible flag for the invincibility powerup
+        this.player.invincible = false;
+        //set no lives / hearts
+        this.player.hearts = this.maxHearts;
+
+        //Set bounce to 0, so our hero just lands directly
+        this.player.setBounce(0);
+        //Set top speeds
+        this.player.body.maxVelocity.x = this.maxPlayerSpeed;
+        this.player.body.maxVelocity.y = 500;
+        this.player.isBig = false;
+        this.player.isChangingSize = false;
+        this.depth = 2;
+    }
+
+    gameScene.placePowerups = function(tile) {
+        if (tile.index != -1) {
+            var box = this.powerupBoxes.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'question-mark-block');
+            box.depth = 2;
+            var powerup = this.powerups.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'powerup');
+            powerup.setOrigin(.5, .5);
+            powerup.depth = 1;
+
+            //disable physics, hide and turn off gravity
+            powerup.enableBody = false;
+            powerup.visible = false;
+            powerup.body.setAllowGravity(false);
+
+            box.body.setAllowGravity(false);
+            box.body.setImmovable(true);
+
+            box.powerup = powerup;
+        }
+    }
+
+    gameScene.placeBaddies = function(tile) {
+        if (tile.index != -1) {
+            //object layer
+            var maxdistance = 0;
+            if (tile.properties != null) maxdistance = tile.properties.maxdistance * tile.width;
+            var baddie = this.baddies.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'baddie');
+            baddie.setOrigin(.5, .5);
+            baddie.setCollideWorldBounds(true);
+            baddie.previousX = baddie.x;
+            baddie.body.velocity.x = this.baddieVelocity;
+            baddie.maxDistance = maxdistance;
+            baddie.direction = -1;
+        }
+    }
+
+    gameScene.placeShells = function(tile) {
+        if (tile.index != -1) {
+            var shell = this.shells.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'shell');
+            shell.setOrigin(.5, .5);
+            shell.setCollideWorldBounds(true);
+        }
+    }
+
+    gameScene.placeLadders = function(tile) {
+        if (tile.index != -1) {
+            //object layer
+            this.ladders.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'laddertile');
+        }
+    }
+
+    gameScene.placeCollapsingPlatforms = function(tile) {
+        if (tile.index != -1) {
+            //two sprites for this type of tile, one with lava one without
+            var sprite = "collapsing-platform";
+            //check for 'ishot' property on each tile
+            if (tile.properties != null && tile.properties.ishot) sprite = "collapsing-platform-hot";
+            this.collapsingPlatforms.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), sprite);
+        }
+    }
+
+    gameScene.baddieDie = function(baddie) {
+        // set baddie as being hit and remove physics
+        baddie.disableBody(false, false);
+        //play baddies super death animation
+        var tween = this.tweens.add({
+            targets: baddie,
+            alpha: 0.3,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            ease: 'Linear',
+            duration: 200,
+            onComplete: function() {
+                gameScene.destroyGameObject(baddie);
+            },
+        });
+    }
+
+    gameScene.setupCollions = function() {
+        //platforms / ground
+        this.physics.add.collider(this.player, this.ground);
+        this.physics.add.collider(this.baddies, this.ground);
+
+        //collapsing platforms
+        this.physics.add.collider(this.player, this.collapsingPlatforms, this.shakePlatform, this.checkOneWay, this);
+        this.physics.add.collider(this.baddies, this.collapsingPlatforms);
+
+        //lava
+        this.physics.add.collider(this.player, this.lava, this.playerHit, null, this);
+        this.physics.add.collider(this.baddies, this.lava, this.baddieDie, null, this);
+
+        //player collisions with objects
+        this.physics.add.overlap(this.player, this.baddies, this.hitBaddie, null, this);
+        this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+
+        //powerups
+        this.physics.add.collider(this.player, this.powerupBoxes, this.hitQuestionMarkBlock, null, this);
+        this.physics.add.collider(this.powerups, this.ground);
+        this.physics.add.overlap(this.player, this.powerups, this.goInvincibile, null, this);
+
+        //ladders
+        this.physics.add.overlap(this.player, this.ladders, this.isOnLadder, null, this);
+        this.physics.add.collider(this.player, this.ladders, null, this.checkLadderTop, this);
+
+        //shells
+        this.physics.add.collider(this.shells, this.ground, this.shellWallHit, null, this);
+        this.physics.add.collider(this.player, this.shells, this.shellHit, null, this);
+        this.physics.add.overlap(this.shells, this.baddies, this.shellHitBaddie, null, this);
+
+        //end level square
+        this.physics.add.overlap(this.player, this.goal, this.finishLevel, null, this);
+    }
+
+    gameScene.hitBaddie = function(player, baddie) {
+        if (player.invincible) {
+            this.baddieDie(baddie);
+        } else {
+            //baddie was hit on the head and hasn't already been hit, and not animating shrink
+            if (baddie.body.touching.up && !baddie.hit && !player.isChangingSize) {
+                player.setVelocityY(this.jumpVelocity);
+                this.baddieDie(baddie);
+            }
+            //otherwise you've hit baddie, BUT not on the head. This makes you die
+            else {
+                this.playerHit(player, baddie);
+            }
+        }
+    }
+
+    gameScene.playerHit = function(player, obstacle) {
+        //if you are not already invulnerable OR invincible
+        if (!player.invulnerable && !player.invincible) {
+            //set player as invulnerable
+            player.invulnerable = true;
+            //get the heart sprites from our arrays we set up earlier
+            var currentHeartCount = player.hearts,
+                currentHeart = this.hearts[currentHeartCount - 1],
+                currentHeartOutline = this.heartOutlines[currentHeartCount - 1];
+
+            //fade out the heart fill
+            var heartFade = this.tweens.add({
+                targets: currentHeart,
+                alpha: 0,
+                scaleX: 0,
+                scaleY: 0,
+                ease: 'Linear',
+                duration: 200
+            });
+
+            //create a timeline of tweens for the heart outline so it shrinks then grows back
+            var heartsTimeline = this.tweens.createTimeline();
+
+            //this is the heart outline scaling down
+            heartsTimeline.add({
+                targets: currentHeartOutline,
+                scaleX: 0.5,
+                scaleY: 0.5,
+                ease: 'Power1',
+                duration: 200
+            });
+
+            //and then back
+            heartsTimeline.add({
+                targets: currentHeartOutline,
+                scaleX: 1,
+                scaleY: 1,
+                ease: 'Power1',
+                duration: 200
+            });
+            //play the timeline straight away
+            heartsTimeline.play();
+
+            //remove a heart from out count stored on the player object
+            player.hearts -= 1;
+
+            //if hearts is 0 or less you're dead as you are out of lives
+            if (player.hearts <= 0) {
+                //remove physics from player
+                player.disableBody(false, false);
+                //and play death animation
+                var tween = this.tweens.add({
+                    targets: player,
+                    alpha: 0.3,
+                    scaleX: 1.1,
+                    scaleY: 1.1,
+                    angle: 90,
+                    x: player.x - 20,
+                    y: player.y - 20,
+                    ease: 'Linear',
+                    duration: 200,
+                    onComplete: function() {
+                        gameScene.restartGame(this);
+                    },
+                    onCompleteScope: this
+                });
+            }
+            //otherwise you're not dead you've just lost a life so...
+            else {
+                if (player.isBig) {
+                    player.body.velocity.x = 0;
+                    player.body.velocity.y = -220;
+                    player.isChangingSize = true;
+
+                    var tween = this.tweens.add({
+                        targets: player,
+                        scaleX: 0.8,
+                        scaleY: 0.8,
+                        alpha: 0.3,
+                        yoyo: 2,
+                        repeat: 2,
+                        ease: 'Linear',
+                        duration: 100,
+                        onComplete: function() {
+                            gameScene.shrinkHero();
+                        },
+                    });
+                } else {
+                    //make the player stop in their tracks and jump up
+                    player.body.velocity.x = 0;
+                    player.body.velocity.y = -220;
+                    //tween the players alpha to 30%
+                    var tween = this.tweens.add({
+                        targets: player,
+                        alpha: 0.3,
+                        ease: 'Linear',
+                        duration: 200,
+                        onCompleteScope: this
+                    });
+                }
+
+                //set a timer for 1 second. When this is up we tween player back to normal and make then vulnerable again
+                var timer = this.time.delayedCall(this.vulnerableTime, this.playerVulnerable);
+            }
+        }
+    }
+
+    gameScene.playerVulnerable = function() {
+        //tween player back to 100% opacity and reset invulnerability flag
+        var death = gameScene.tweens.add({
+            targets: gameScene.player,
+            alpha: 1,
+            ease: 'Linear',
+            duration: 200,
+            onComplete: function() {
+                gameScene.player.invulnerable = false;
+            },
+            onCompleteScope: this
+        });
+    }
+
+    gameScene.shellHitBaddie = function(shell, baddie) {
+        if (!baddie.hit) {
+            // set baddie as being hit and remove physics
+            baddie.disableBody(false, false);
+            //play baddie death animation
+            var tween = this.tweens.add({
+                targets: baddie,
+                alpha: 0.3,
+                scaleX: 1.5,
+                scaleY: 1.5,
+                ease: 'Linear',
+                duration: 200,
+                onComplete: function() {
+                    gameScene.destroyGameObject(baddie);
+                },
+            });
+            this.destroyShell(shell);
+        }
+    }
+
+    gameScene.shellWallHit = function(shell, wall) {
+        //if shell has hit a wall with either the right of left side of itself it should be destroyed
+        if (shell.body.onWall()) {
+            this.destroyShell(shell);
+        }
+    }
+
+    gameScene.shellHit = function(player, shell) {
+        //work out the center point of the shell and player
+        var threshold = shell.x + (shell.width / 2),
+            playerX = player.x + (player.width / 2);
+
+        //if the player has jumped on top of the shell...
+        if (shell.body.touching.up) {
+            //if player landed on left hand side of shell send shell off to right
+            if (playerX < threshold) shell.body.velocity.x = gameScene.shellSpeed;
+            //if player landed on right hand side of shell send shell off to left
+            else shell.body.velocity.x = -gameScene.shellSpeed;
+        }
+        //player hit shell from left so send right
+        if (shell.body.touching.left) {
+            shell.body.velocity.x = gameScene.shellSpeed;
+        }
+        //player hit shell from right so send left
+        if (shell.body.touching.right) {
+            shell.body.velocity.x = -gameScene.shellSpeed;
+        }
+        //make player react to shell by bouncing slightly
+        player.body.velocity.y = -200;
+    }
+
+    gameScene.finishLevel = function(player, goal) {
+        game.scene.switch('game', 'endScreen');
+    }
+
+    gameScene.destroyShell = function(shell) {
+        //disable physics of shell
+        shell.disableBody(false, false);
+        //play shell hit animation
+        var destroyShell = this.tweens.add({
+            targets: shell,
+            alpha: 0.3,
+            scaleX: 2,
+            scaleY: 2,
+            y: "-=100",
+            rotation: -360,
+            ease: 'Linear',
+            duration: 200,
+            onComplete: function() {
+                gameScene.destroyGameObject(shell);
+            },
+        });
+    }
+
+    gameScene.restartGame = function(scene) {
+        game.scene.switch('game', 'endScreen');
+    }
+
+    gameScene.setupControls = function() {
+        this.input.addPointer(1);
+        cursors = this.input.keyboard.createCursorKeys();
+
+        sliderBar = this.add.sprite(0, 0, 'touch-slider');
+        sliderKnob = this.add.sprite(0, 0, 'touch-knob');
+
+        this.touchSlider = this.add.container(100, 450);
+        this.touchSlider.add(sliderBar);
+        this.touchSlider.add(sliderKnob);
+        this.touchSlider.alpha = 0;
+        this.touchSlider.setScrollFactor(0);
+    }
+
+    gameScene.moveLeft = function(acceleration) {
+        //if hero is on ground then use full acceleration
+        if (this.standing) {
+            this.player.setAccelerationX(-acceleration);
+        }
+        //if hero is in the air then accelerate slower
+        else {
+            this.player.setAccelerationX(-acceleration / 3);
+        }
+    }
+
+    gameScene.moveRight = function(acceleration) {
+        //if hero is on ground then use full acceleration
+        if (this.standing) {
+            this.player.setAccelerationX(acceleration);
+        }
+        //if hero is in the air then accelerate slower
+        else {
+            this.player.setAccelerationX(acceleration / 3);
+        }
+    }
+
+    gameScene.switchDirection = function(baddie) {
+        //reverse velocity so baddie moves are same speed but in opposite direction
+        if (baddie.body.velocity.x == 0) {
+            if (baddie.direction == -1) baddie.body.velocity.x = this.baddieVelocity * -1;
+            if (baddie.direction == 1) baddie.body.velocity.x = this.baddieVelocity;
+        } else {
+            baddie.body.velocity.x *= -1;
+        }
+        baddie.direction *= -1;
+        //reset count
+        baddie.previousX = baddie.x;
+        //flip sprite=
+    }
+
+    //called when player overlaps ladder
+    gameScene.isOnLadder = function(player, ladder) {
+        //set ladder flag to true and remove gravity but only if not at the top of the ladder
+        if (Math.floor(player.y) + (player.height / 2) > ladder.y - (ladder.height / 2)) {
+            this.onLadder = true;
+            //remember this ladder
+            this.currentLadder = ladder;
+            player.body.setAllowGravity(false);
+        }
+    }
+
+    //called when player collides with ladder
+    gameScene.checkLadderTop = function(player, ladder) {
+        /* We check here if our player is higher up than the ladder i.e. if the player is on top of the ladder
+        the sprites are positioned from their centres, so we have to add or subtract half their height to find the heroes feet and the top of the ladder. 
+        With the player we add half the height so we are checking the positon of their feet. With the ladder we add half the height so we are checking the top of the ladder. We also round the two values differently, floor for the player to give us the smallest number possible and ceil for the ladder height to give us the highest number possible. This deals with any subpixel values.
+        */
+        if (Math.floor(player.y + (player.height / 2)) <= Math.ceil(ladder.y - (ladder.height / 2))) {
+            //if pressing the down key, or touch down return false and cancel collision
+            if (cursors.down.isDown || (Math.floor(this.prevPos) < Math.floor(this.yPos))) return false;
+            //return true making our collision happen i.e. the player can walk on top of the ladder
+            else return true;
+        }
+        //otherwise return false which cancels the collision
+        else {
+            return false;
+        }
+    }
+
+
+    //called when player collides with oneway platforms
+    gameScene.checkOneWay = function(player, oneway) {
+        //if player is higher up the screen then the plaform then enable the collision
+        if (player.y < oneway.y) {
+            return true;
+        }
+        //otherwise disable collision
+        return false;
+    }
+
+    gameScene.shakePlatform = function(player, platform) {
+        //only make platform shake if player is standing on it
+        if (player.body.blocked.down) {
+            //do a little camera shake to indicate something bad is going to happen
+            this.camera.shake(200, 0.001);
+            //we need to store the global scope here so we can keep it later
+            var ourScene = this;
+            //do a yoyo tween shaking the platform back and forth and up and down
+            var tween = this.tweens.add({
+                targets: platform,
+                yoyo: true,
+                repeat: 10,
+                x: {
+                    from: platform.x,
+                    to: platform.x + 2 * 1,
+                },
+                ease: 'Linear',
+                duration: 50,
+                onComplete: function() {
+                    ourScene.destroyPlatform(platform);
+                }
+            });
+        }
+    }
+
+    gameScene.destroyPlatform = function(platform) {
+        var tween = this.tweens.add({
+            targets: platform,
+            alpha: 0,
+            y: "+=25",
+            ease: 'Linear',
+            duration: 100,
+            onComplete: function() {
+                gameScene.destroyGameObject(platform);
+            }
+        });
+    }
+
+
+    gameScene.update = function() {
+        //loop through any coin tweens
+        for (var i = 0; i < this.coinTweens.length; i++) {
+            var tween = this.coinTweens[i];
+            //if we find a tween update it to the new position of the scoreCoin
+            if (tween) tween.updateTo("x", this.camera.scrollX + this.scoreCoin.x);
+        }
+
+        //set jump velocity depending on whether we are big or small
+        if (this.player.isBig) this.jumpVelocity = this.jumpVelocityBig;
+        else this.jumpVelocity = this.jumpVelocitySmall;
+
+        this.emitter.setPosition(this.player.x, this.player.y);
+        //built in arcade physics functions of blocked and touching to test for collisions in a given direction
+        this.standing = this.player.body.blocked.down || this.player.body.touching.down,
+            //get current time in seconds
+            d = new Date(),
+            time = d.getTime();
+
+        //if left key is down then move left
+        if (cursors.left.isDown) {
+            this.moveLeft(this.acceleration);
+        }
+        //same deal but for right arrow
+        else if (cursors.right.isDown) {
+            this.moveRight(this.acceleration);
+        }
+
+        //loop through baddies group and for each baddie...
+        this.baddies.getChildren().forEach(function(theBaddie) {
+            //check if it's time for them to turn around
+            if (Math.abs(theBaddie.x - theBaddie.previousX) >= theBaddie.maxDistance) {
+                this.switchDirection(theBaddie);
+            } else {
+                if (theBaddie.direction == -1 && theBaddie.body.blocked.left) this.switchDirection(theBaddie);
+                if (theBaddie.direction == 1 && theBaddie.body.blocked.right) this.switchDirection(theBaddie);
+            }
+        }, this);
+
+        //if either touch pointer is down. Two thumbs, two pointers
+        if (this.input.pointer1.isDown || this.input.pointer2.isDown) {
+            //work out half way point of our game
+            var leftHalf = config.width / 2;
+
+            //Left hand side - horizontal movement
+            //if thumb is on the left hand side of the screen we are dealing with horizontal movement
+            if (this.input.pointer1.x < leftHalf || this.input.pointer2.x < leftHalf) {
+                //reset pointer variable
+                var myMovePointer = null;
+                //here we get the pointer that is being used on the left hand side of screen. Depends which thumb they touched screen with first.
+                if (this.input.pointer1.x < leftHalf && this.input.pointer1.isDown) {
+                    myMovePointer = this.input.pointer1;
+                }
+                if (this.input.pointer2.x < leftHalf && this.input.pointer2.isDown) {
+                    myMovePointer = this.input.pointer2;
+                }
+
+                //if we have an active touch pointer on the left hand side of the screen then...
+                if (myMovePointer) {
+                    //if touchSlide is not already showing then
+                    if (!this.touchSlider.alpha) {
+                        //make it visible
+                        this.touchSlider.alpha = 1;
+                        //position touchSlider to be where the users thumb or finger is
+                        this.touchSlider.x = myMovePointer.x;
+                        //with the Y pos we add a thumbSizeOffset so it's above the users thumb not hidden under it
+                        this.touchSlider.y = myMovePointer.y - this.thumbSizeOffset;
+                        //set our start point and reset slider display
+                        startX = myMovePointer.x;
+                        sliderKnob.x = 0;
+                    }
+
+                    //if thumb has moved left or right of where we started then move
+                    if (myMovePointer.x < startX || myMovePointer.x > startX) {
+                        //work out how far thumb has moved. Is this a big enough movement?
+                        var movement = 0;
+                        if (myMovePointer.x < startX) movement = startX - myMovePointer.x;
+                        if (myMovePointer.x > startX) movement = myMovePointer.x - startX;
+                        //If move is significant enough then move our character
+                        if (movement > this.touchMoveThreshold) {
+                            //set flag as we are definitely moving
+                            this.touchMoving = true;
+                            //set a flag so we know we are on a mobile device
+                            this.isTouch = true;
+
+                            //set slider knob position to be half way to edge
+                            var sliderPos = 0;
+                            //left
+                            if (myMovePointer.x < startX) sliderPos = -(sliderBar.width / 4);
+                            //right
+                            if (myMovePointer.x > startX) sliderPos = sliderBar.width / 4;
+
+                            //set acceleration to be an 8th of normal
+                            var tmpAcceleration = gameScene.acceleration / 8;
+
+                            //if thumb has moved quite a lot, then go faster
+                            if (movement > this.largeThumbMoveAcross) {
+                                //the knob position should be at the edge as we're at full tilt
+                                if (myMovePointer.x < startX) sliderPos = -(sliderBar.width / 2);
+                                if (myMovePointer.x > startX) sliderPos = sliderBar.width / 2;
+                                //acceleration is normal
+                                tmpAcceleration = gameScene.acceleration;
+                            }
+
+                            //tween slider knob to position we just worked out
+                            var tween = this.tweens.add({
+                                targets: sliderKnob,
+                                x: sliderPos,
+                                ease: "Power1",
+                                duration: 300
+                            });
+                            if (myMovePointer.x < startX) this.moveLeft(tmpAcceleration);
+                            if (myMovePointer.x > startX) this.moveRight(tmpAcceleration);
+                        } else {
+                            //If move is really, really small then we don't count it. Stop moving
+                            //set moving flag to false
+                            this.touchMoving = false;
+                            //reset slider knob to center position
+                            var tween = this.tweens.add({
+                                targets: sliderKnob,
+                                x: 0,
+                                ease: "Power1",
+                                duration: 300
+                            });
+                        }
+                    }
+                }
+            }
+
+            //Right hand side - Touch Jumping
+            //if thumb is on the right hand side of the screen we are dealing with vertical movement - i.e. jumping.
+            if (this.input.pointer1.x > leftHalf || this.input.pointer2.x > leftHalf) {
+                //reset pointer variable
+                var myJumpPointer = null;
+
+                //get active touch pointer for this side of the screen
+                if (this.input.pointer1.x > leftHalf && this.input.pointer1.isDown) {
+                    myJumpPointer = this.input.pointer1;
+                }
+                if (this.input.pointer2.x > leftHalf && this.input.pointer2.isDown) {
+                    myJumpPointer = this.input.pointer2;
+                }
+                //if we have a touch pointer on right hand side of screen...
+                if (myJumpPointer) {
+                    //store last y position of touch pointer
+                    this.prevPos = this.yPos;
+                    //get new position of touch pointer
+                    this.yPos = myJumpPointer.y;
+
+                    //check if we are currently overlapping a ladder. If we are then...
+                    if (this.onLadder) {
+                        //kill any upwards / downwards velocity from our hero
+                        this.player.setVelocityY(0);
+
+                        //if moving up with thumb then climb up the ladder
+                        if (Math.floor(this.prevPos) > Math.floor(this.yPos)) {
+                            if (!myMovePointer) {
+                                //when moving vertically we want the player pefectly lined up
+                                this.player.x = this.currentLadder.x;
+                                //also kill any x velocity to be sure
+                                this.player.setVelocityX(0);
+                                this.player.setVelocityY(-100);
+                            }
+                        }
+                        //if moving down with thumb then climb down the ladder
+                        if (Math.floor(this.prevPos) < Math.floor(this.yPos)) {
+                            if (!myMovePointer) {
+                                //when moving vertically we want the player pefectly lined up
+                                this.player.x = this.currentLadder.x;
+                                //also kill any x velocity to be sure
+                                this.player.setVelocityX(0);
+                                this.player.setVelocityY(100);
+                            }
+                        }
+                    }
+                    //not on a ladder so go for a standard jump 
+                    else {
+                        //  if we have moved our thump upwards then we set jump flag to true
+                        if (this.prevPos - this.yPos > this.touchJumpThreshold && this.standing) {
+                            this.touchJump = true;
+                        }
+                    }
+                }
+            }
+            //neither thumb is down so reset touch movement variables and hide touchSlider
+        } else {
+            this.touchSlider.alpha = 0;
+            startX = 0;
+            this.touchMoving = false;
+
+            if (this.onLadder) {
+                //if player is on top of the ladder we reset the velocity, otherwise we leave them be to climb or descend
+                //if (Math.floor(this.player.y + (this.player.height / 2)) <= Math.ceil(this.ladder.y - (this.ladder.height / 2))) {
+                //  this.player.setVelocityY(0);
+                //}
+            }
+        }
+
+        //if not moving left or right via keys or touch device...
+        if (!cursors.right.isDown && !cursors.left.isDown && !this.touchMoving) {
+            //if hero is close to having no velocity either left or right then set velocity to 0. This stops jerky back and forth as the hero comes to a halt. i.e. as we slow hero down, below a certain point we just stop them moving altogether as it looks smoother
+            if (Math.abs(this.player.body.velocity.x) < 10 && Math.abs(this.player.body.velocity.x) > -10) {
+                this.player.setVelocityX(0);
+                this.player.setAccelerationX(0);
+            } else {
+                //if our hero isn't moving left or right then slow them down
+                //this velocity.x check just works out whether we are setting a positive (going right) or negative (going left) number
+                this.player.setAccelerationX(
+                    (this.player.body.velocity.x > 0 ? -1 : 1) * gameScene.acceleration / 3
+                );
+            }
+        }
+
+        //get current time in seconds
+        var d = new Date();
+        var time = d.getTime();
+
+        //if we have just left the ground set edge time for 100ms time
+        if (!this.standing && this.wasStanding) {
+            this.edgeTimer = time + 100;
+        }
+
+        //if we are on a ladder and not on a touch device
+        if (this.onLadder && !this.isTouch) {
+            //kill any upwards / downwards velocity from our hero
+            this.player.setVelocityY(0);
+
+            if (cursors.up.isDown) {
+                if (!cursors.left.isDown && !cursors.right.isDown) {
+                    //when moving vertically we want the player pefectly lined up
+                    this.player.x = this.currentLadder.x;
+                    //also kill any x velocity to be sure
+                    this.player.setVelocityX(0);
+                    this.player.setVelocityY(-100);
+                }
+            }
+            //if JUST down is being pressed then line up player perfectly with ladder. 
+            //We do this to make it quicker - but like a firemans pole
+            if (cursors.down.isDown && !cursors.left.isDown && !cursors.right.isDown) {
+                //when moving vertically we want the player pefectly lined up
+                this.player.x = this.currentLadder.x;
+                //also kill any x velocity to be sure
+                this.player.setVelocityX(0);
+                this.player.setVelocityY(100);
+            }
+        }
+
+
+        //if player is standing, or just fallen off a ledge (within our allowed grace time) and..
+        //either up key is press, or touchjump flag is set AND they are not already jumping then jump!
+        if (
+            (this.standing || this.time <= this.edgeTimer) &&
+            (cursors.up.isDown || this.touchJump) &&
+            !this.jumping && !this.onLadder
+        ) {
+            this.player.setVelocityY(this.jumpVelocity);
+            this.jumping = true;
+        }
+
+        //if not pressing up key...
+        if (!cursors.up.isDown) {
+            //if player is touching ground / platform then reset jump parametrs
+            if (this.standing) {
+                this.jumping = false;
+                this.touchJump = false;
+                this.prevPos = 0;
+            }
+        }
+        this.wasStanding = this.standing;
+        //if player is no longer on on ladder then turn gravity back on
+        if (!this.onLadder) this.player.body.setAllowGravity(true);
+        this.onLadder = false;
+    }
+
+
+    gameScene.collectCoin = function(player, coin) {
+        //stop coin for being collected twice, as it will stick around on the screen as it animnates
+        coin.disableBody(false, false);
+
+        //tween coin to score coin in corner shrink
+        var collectCoinTween = this.tweens.add({
+            targets: coin,
+            alpha: 0.3,
+            angle: 720,
+            x: gameScene.scoreCoin.x,
+            y: gameScene.scoreCoin.y,
+            scaleX: 0.5,
+            scaleY: 0.5,
+            ease: 'Linear',
+            duration: 500,
+            onComplete: function() {
+                gameScene.destroyGameObject(coin);
+                gameScene.coinTweens.shift();
+            },
+        });
+        //add the tween to the tweens array
+        this.coinTweens.push(collectCoinTween);
+
+        //check if we already have an animation
+        if (this.scoreCoinTimeline) {
+            //if animation isn't currently running, then run again
+            if (this.scoreCoinTimeline.progress == 1) {
+                this.animateScoreCoin();
+            }
+        }
+        //no animation to create one
+        else {
+            this.animateScoreCoin();
+        }
+        gameScene.score += 10;
+        gameScene.scoreText.setText(gameScene.score);
+    }
+
+    gameScene.growHero = function() {
+        //change sprite to be our larger one
+        this.player.setTexture("hero");
+        //manually change the size
+        this.player.setSize(32, 32);
+        //set flag we know the player is in big mode
+        this.player.isBig = true;
+        //reset our transitional flag
+        this.player.isChangingSize = false;
+    }
+
+
+    gameScene.shrinkHero = function() {
+        //change player to smaller sprire
+        this.player.setTexture("hero-small");
+        //manually resize so physics adjusts
+        this.player.setSize(22, 22);
+        //set isBig for false so we know the player is small
+        this.player.isBig = false;
+        //reset our transitional flag
+        this.player.isChangingSize = false;
+    }
+
+    gameScene.collectMushroom = function(player, mushroom) {
+        //stop the players movement
+        player.body.velocity.x = 0;
+        player.body.velocity.y = 0;
+        //set a flag saying the player is transitioning sizes
+        player.isChangingSize = true;
+
+        //disable the mushroom so it can only be triggered once
+        mushroom.disableBody(false, false);
+
+        //tween the player scaling up in size
+        var tween = this.tweens.add({
+            targets: player,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            yoyo: 1,
+            repeat: 1,
+            ease: 'Linear',
+            duration: 100,
+            onComplete: function() {
+                //when the tween is over call this function
+                gameScene.growHero();
+            },
+        });
+
+        //tween powerup to scale up and then remove
+        var tween = this.tweens.add({
+            targets: mushroom,
+            alpha: 0.3,
+            angle: 90,
+            scaleX: 0.3,
+            scaleY: 0.3,
+            ease: 'Linear',
+            duration: 500,
+            onComplete: function() {
+                gameScene.destroyGameObject(mushroom);
+            },
+        });
+    }
+
+    gameScene.hitQuestionMarkBlock = function(player, block) {
+        //if the block has been hit from the bottom and is not already hit then...
+        if (block.body.touching.down && !block.hit) {
+            //mark block as hit
+            block.hit = true;
+            //make the mushroom visible
+            block.powerup.visible = true;
+
+            //animate the rising of the mushroom powerup
+            var tween = this.tweens.add({
+                targets: block.powerup,
+                y: "-=24",
+                ease: 'Linear',
+                duration: 300,
+                onComplete: function() {
+                    //when the animation completes call this function
+                    gameScene.emptyQuestionBlock(block);
+                },
+            });
+
+            //animate the box being hit and jumping up slightly
+            var tween = this.tweens.add({
+                targets: block,
+                y: "-=5",
+                ease: 'Linear',
+                yoyo: true,
+                duration: 100
+            });
+        }
+    }
+
+    gameScene.emptyQuestionBlock = function(block) {
+        //change the sprite of the question mark box
+        block.setTexture("empty-box");
+        //enable physics on the mushroom powerup
+        block.powerup.enableBody = true;
+        //turn mushroom powerups gravity back on
+        block.powerup.body.setAllowGravity(true);
+        //randomly assign left or right direction to the powerup
+        if (Math.floor(Math.random() * 1)) block.powerup.setVelocityX(-80);
+        else block.powerup.setVelocityX(80);
+    }
+
+    gameScene.goInvincibile = function(player, invicibility) {
+        //stop invicibility for being collected twice, as it will stick around on the screen as it aninimates
+        invicibility.disableBody(false, false);
+
+        //change players max velocity so they can go super fast
+        player.body.maxVelocity.x = this.superPlayerSpeed;
+        //start our emitter
+        this.emitter.resume();
+        //flash animations using a tint
+        this.tweens.addCounter({
+            from: 0,
+            to: 100,
+            duration: 500,
+            yoyo: true,
+            repeat: 5,
+            onUpdate: function(tween) {
+                var value = Math.floor(tween.getValue());
+                var newColorObject = Phaser.Display.Color.Interpolate.ColorWithColor(gameScene.heroColor, gameScene.invincibleColor, 100, value);
+                var color = Phaser.Display.Color.GetColor(newColorObject.r, newColorObject.g, newColorObject.b);
+                player.setTint(color);
+            },
+            onComplete: function() {
+                gameScene.resetInvincibility();
+            }
+        });
+
+        //tween powerup to scale up and disappear
+        var tween = this.tweens.add({
+            targets: invicibility,
+            alpha: 0.3,
+            angle: 90,
+            scaleX: 0.3,
+            scaleY: 0.3,
+            ease: 'Linear',
+            duration: 500,
+            onComplete: function() {
+                gameScene.destroyGameObject(invicibility);
+            },
+        });
+        //set players invincible flag to true
+        player.invincible = true;
+    }
+
+    gameScene.resetInvincibility = function() {
+        //reset the invincible flag
+        this.player.invincible = false;
+        //reset max speed of player
+        this.player.body.maxVelocity.x = this.maxPlayerSpeed;
+        //pause emitter and remove any existing particles
+        this.emitter.pause();
+        this.emitter.killAll();
+    }
+
+    //rotate score coin and make bigger before shrinking again
+    gameScene.animateScoreCoin = function() {
+        this.scoreCoinTimeline = this.tweens.timeline({
+            targets: gameScene.scoreCoin,
+            duration: 100,
+            tweens: [{
+                    scaleX: 1.5,
+                    scaleY: 1.5,
+                    angle: "+=45"
+                },
+                {
+                    scaleX: 1,
+                    scaleY: 1,
+                    angle: "+=45"
+                }
+            ]
+        });
+    }
+
+    gameScene.destroyGameObject = function(gameObject) {
+        // Removes any game object from the screen
+        gameObject.destroy();
+    }
+
+    var config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 400,
+        transparent: true,
+        physics: {
+            default: 'arcade',
+            arcade: {
+                fps: 120,
+                gravity: { y: 300 }
+            }
+        },
+        //we can omit this entire line and add scenes manually later *
+        scene: [titleScreen, gameScene, endScreen]
+    };
+    var game = new Phaser.Game(config);
+    // * This is how you add scenes manually
+    //game.scene.add("titleScreen", titleScreen);
+    //game.scene.add("game", gameScene);
+    //game.scene.add("endScreen", endScreen);
+    //we call this line to load a scene
+    //game.scene.start('titleScreen');
+    </script>
+</body>
+
+</html>
