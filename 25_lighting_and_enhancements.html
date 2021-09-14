@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Tile Map Object Layers - Phaser Platformer series</title>
+    <title>Lighting and Enhancements - Phaser Platformer series</title>
     <script src="js/phaser.min.js"></script>
     <link rel="stylesheet" href="css/screen.css">
 </head>
@@ -153,8 +153,6 @@
     }
 
     gameScene.preload = function() {
-
-        // this.load.setBaseURL("https://digitherium.com/codepen/phaserplatformer/");
         this.load.setBaseURL("assets/");
         this.load.image('ground', 'platform.jpg');
         this.load.image('collapsing-platform', 'collapsing-platform.png');
@@ -175,10 +173,23 @@
         this.load.image('touch-slider', 'touch-slider.png');
         this.load.image('touch-knob', 'touch-knob.png');
         this.load.image('tiles', '/map/environment-tiles.png');
-        this.load.tilemapTiledJSON('map', '/map/newmap.json');
+        this.load.image('background-tiles', '/map/environment-background.png');
+        this.load.tilemapTiledJSON('map', '/map/enhancedmap.json');
 
         this.load.spritesheet('lava',
             'map/lava.png', { frameWidth: 32, frameHeight: 32 }
+        );
+
+        this.load.spritesheet('torch',
+            'torch.png', { frameWidth: 16, frameHeight: 32 }
+        );
+
+        this.load.spritesheet('eye-left',
+            'eye-left.jpg', { frameWidth: 16, frameHeight: 16 }
+        );
+
+        this.load.spritesheet('eye-right',
+            'eye-right.jpg', { frameWidth: 16, frameHeight: 16 }
         );
     }
 
@@ -187,12 +198,15 @@
         //main tile map for static elements
         this.setupTileMap();
 
+        this.setupLights();
         //game objects from object layers in tiled
         this.createCoins();
         this.createLadders();
         this.createBaddies();
         this.createCollapsingPlatforms();
 
+        this.createLava();
+        this.createTorches();
         this.createPowerups();
         this.createShells();
         this.createPlayer();
@@ -217,13 +231,15 @@
         this.map = this.make.tilemap({ key: 'map' });
         //set the tileset to use using the name of the tileset in tiled and the name of our tilesheet in preload
         tiles = this.map.addTilesetImage('environment-tiles', 'tiles');
+        bgTiles = this.map.addTilesetImage('environment-background', 'background-tiles');
 
         //set bounds of our world based on tilemap
         this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
 
         //create layers from their names in tiled. 
-        this.ground = this.map.createLayer('platforms', tiles);
-        this.lava = this.map.createLayer('lava', tiles);
+        this.background = this.map.createLayer('background', bgTiles).setPipeline('Light2D');
+        this.ground = this.map.createLayer('platforms', tiles).setPipeline('Light2D');
+        this.lava = this.map.createLayer('lava', tiles).setPipeline('Light2D');
         this.foreground = this.map.createLayer('grass', tiles);
         //change depth so this layer sits in front of everything
         this.foreground.depth = 10;
@@ -247,6 +263,34 @@
         this.laddersLayer.depth = 1;
     }
 
+    gameScene.placeLavaBubbles = function(tile) {
+        if (tile.index != -1) {
+            //place sprite
+            var bubbles = this.bubblingLava.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'lava');
+            //reduce size of hit area
+            bubbles.body.setSize(32, 16);
+            //start animation
+            bubbles.anims.play('bubbling', true);
+            //set depth so player sits behind the bubbls
+            bubbles.depth = 2;
+            //turn on lights for this sprite
+            bubbles.setPipeline('Light2D');
+        }
+    }
+
+    gameScene.placeTorches = function(tile, sprite, radius, animationKey) {
+        if (tile.index != -1) {
+            //create light at the top of the tile. Use the passed in radius
+            this.lights.addLight(tile.x + (tile.width / 2), tile.y - (tile.height), radius).setIntensity(2.0);
+            //Place the sprite itself. Use the key passed in
+            var torch = this.add.sprite(tile.x + (tile.width / 2), tile.y - (tile.height / 2), sprite);
+            //kick off animation
+            torch.anims.play(animationKey, true);
+            //turn on lights
+            torch.setPipeline('Light2D');
+        }
+    }
+
     gameScene.createBaddies = function() {
         this.baddies = this.physics.add.group();
         this.baddiesLayer = this.map.getObjectLayer('baddies');
@@ -265,6 +309,59 @@
         this.powerups = this.physics.add.group();
         this.powerupBoxesLayer = this.map.getObjectLayer('power-ups');
         this.powerupBoxesLayer.objects.forEach(element => this.placePowerups(element));
+    }
+
+    gameScene.createTorches = function() {
+        //standard torch flicker
+        this.anims.create({
+            key: 'flicker',
+            frames: this.anims.generateFrameNumbers('torch', { start: 0, end: 2 }),
+            frameRate: 3,
+            repeat: -1
+        });
+
+        //right eye
+        this.anims.create({
+            key: 'flicker-right',
+            frames: this.anims.generateFrameNumbers('eye-right', { start: 0, end: 2 }),
+            frameRate: 3,
+            repeat: -1
+        });
+
+        //left eye
+        this.anims.create({
+            key: 'flicker-left',
+            frames: this.anims.generateFrameNumbers('eye-left', { start: 0, end: 2 }),
+            frameRate: 3,
+            repeat: -1
+        });
+
+        //grab torches layer from Tiled data and place torches
+        //placeTorches expects the following:
+        //object, sprite name, light radius, animation key
+        this.torchesLayer = this.map.getObjectLayer('torches');
+        this.torchesLayer.objects.forEach(element => this.placeTorches(element, 'torch', 100, 'flicker'));
+
+        this.leftEyeLayer = this.map.getObjectLayer('eye-left');
+        this.leftEyeLayer.objects.forEach(element => this.placeTorches(element, 'left-eye', 150, 'flicker-left'));
+
+        this.rightEyeLayer = this.map.getObjectLayer('eye-right');
+        this.rightEyeLayer.objects.forEach(element => this.placeTorches(element, 'right-eye', 150, 'flicker-right'));
+    }
+
+    gameScene.createLava = function() {
+        //define our bubbling lava animation, it is 3 frames long
+        this.anims.create({
+            key: 'bubbling',
+            frames: this.anims.generateFrameNumbers('lava', { start: 0, end: 2 }),
+            frameRate: 3,
+            repeat: -1
+        });
+
+        //place the sprites for the bubbling lava
+        this.bubblingLava = this.physics.add.staticGroup();
+        this.bubblingLavaLayer = this.map.getObjectLayer('bubbling-lava');
+        this.bubblingLavaLayer.objects.forEach(element => this.placeLavaBubbles(element));
     }
 
     gameScene.createShells = function() {
@@ -333,6 +430,13 @@
         if (tile.index != -1) {
             //object layer
             var coin = gameScene.coins.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'coin');
+            this.tweens.add({
+                targets: coin,
+                angle: 360,
+                repeat: -1,
+                ease: 'Linear',
+                duration: 3000
+            });
         }
     }
 
@@ -363,11 +467,13 @@
             var shell = this.shells.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'shell');
             shell.setOrigin(.5, .5);
             shell.setCollideWorldBounds(true);
+            shell.setPipeline('Light2D');
         }
     }
 
     gameScene.placePlayer = function(tile) {
         this.player = this.physics.add.sprite(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'hero-small');
+        this.player.setPipeline('Light2D');
         this.player.setOrigin(.5, .5);
         this.player.setDrag(1);
         this.player.setCollideWorldBounds(true);
@@ -393,6 +499,7 @@
         if (tile.index != -1) {
             var box = this.powerupBoxes.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'question-mark-block');
             box.depth = 2;
+            box.setPipeline("Light2D");
             var powerup = this.powerups.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'powerup');
             powerup.setOrigin(.5, .5);
             powerup.depth = 1;
@@ -416,6 +523,7 @@
             if (tile.properties != null) maxdistance = tile.properties.maxdistance * tile.width;
             var baddie = this.baddies.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'baddie');
             baddie.setOrigin(.5, .5);
+            baddie.setPipeline('Light2D');
             baddie.setCollideWorldBounds(true);
             baddie.previousX = baddie.x;
             baddie.body.velocity.x = this.baddieVelocity;
@@ -435,7 +543,7 @@
     gameScene.placeLadders = function(tile) {
         if (tile.index != -1) {
             //object layer
-            this.ladders.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'laddertile');
+            var ladder = this.ladders.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), 'laddertile');
         }
     }
 
@@ -445,7 +553,7 @@
             var sprite = "collapsing-platform";
             //check for 'ishot' property on each tile
             if (tile.properties != null && tile.properties.ishot) sprite = "collapsing-platform-hot";
-            this.collapsingPlatforms.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), sprite);
+            var platform = this.collapsingPlatforms.create(tile.x + (tile.width / 2), tile.y - (tile.height / 2), sprite);
         }
     }
 
@@ -499,6 +607,27 @@
 
         //end level square
         this.physics.add.overlap(this.player, this.goal, this.finishLevel, null, this);
+    }
+
+    gameScene.setupLights = function() {
+        this.lights.enable();
+        //set ambient colour whole scene. This is set to quite dark for contrast with lights
+        this.lights.setAmbientColor(0x666666);
+
+        //light at entrance to level
+        this.lights.addLight(0, 340, 300).setColor(0xffffff).setIntensity(3.0);
+        //lava lights
+        this.lights.addLight(440, 360, 100).setColor(0xeb840b).setIntensity(1.0);
+        this.lights.addLight(540, 360, 100).setColor(0xffea00).setIntensity(1.5);
+        this.lights.addLight(640, 360, 100).setColor(0xffea00).setIntensity(1.5);
+        this.lights.addLight(740, 360, 100).setColor(0xeb840b).setIntensity(1.0);
+
+        //bright white light on snakes statue
+        this.lights.addLight(1280, 300, 300).setIntensity(2.0);
+        //exit light next to particle effects
+        this.lights.addLight(2192, 60, 300).setColor(0xfad050).setIntensity(4.0);
+        //small lava pit lights
+        this.lights.addLight(2032, 400, 80).setColor(0xffea00).setIntensity(3.0);
     }
 
     gameScene.hitBaddie = function(player, baddie) {
@@ -1034,13 +1163,6 @@
             this.touchSlider.alpha = 0;
             startX = 0;
             this.touchMoving = false;
-
-            if (this.onLadder) {
-                //if player is on top of the ladder we reset the velocity, otherwise we leave them be to climb or descend
-                //if (Math.floor(this.player.y + (this.player.height / 2)) <= Math.ceil(this.ladder.y - (this.ladder.height / 2))) {
-                //  this.player.setVelocityY(0);
-                //}
-            }
         }
 
         //if not moving left or right via keys or touch device...
@@ -1357,12 +1479,6 @@
         scene: [titleScreen, gameScene, endScreen]
     };
     var game = new Phaser.Game(config);
-    // * This is how you add scenes manually
-    //game.scene.add("titleScreen", titleScreen);
-    //game.scene.add("game", gameScene);
-    //game.scene.add("endScreen", endScreen);
-    //we call this line to load a scene
-    //game.scene.start('titleScreen');
     </script>
 </body>
 
